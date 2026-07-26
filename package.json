@@ -1,0 +1,29 @@
+{
+  "name": "accident-black-spot-detection",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A location-based road safety application that detects accident-prone black spots, sends proximity alerts, supports incident reporting, and provides emergency SOS assistance.",
+  "license": "MIT",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=20.19.4"
+  },
+  "scripts": {
+    "start": "npm run start --workspace @accident-black-spot-detection/mobile",
+    "android": "npm run android --workspace @accident-black-spot-detection/mobile",
+    "ios": "npm run ios --workspace @accident-black-spot-detection/mobile",
+    "doctor": "npm run doctor --workspace @accident-black-spot-detection/mobile",
+    "lint": "npm run lint --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "verify": "npm run format:check && npm run lint && npm run typecheck && npm run test"
+  },
+  "devDependencies": {
+    "prettier": "^3.9.6"
+  }
+}

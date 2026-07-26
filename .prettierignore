@@ -1,0 +1,12 @@
+node_modules/
+.expo/
+dist/
+web-build/
+coverage/
+package-lock.json
+apps/mobile/ios/
+apps/mobile/android/
+expo-env.d.ts
+.venv/
+__pycache__/
+.next/
