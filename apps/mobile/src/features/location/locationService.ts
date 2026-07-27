@@ -272,6 +272,74 @@ export async function getCurrentLocation(
 }
 
 /**
+ * Subscribe to foreground position updates.
+ *
+ * Proximity checking needs a stream, not one-shot reads: a user driving past a
+ * black spot has to be warned as they approach it, which a manual refresh cannot
+ * do.
+ *
+ * `balanced` accuracy is used by default and the update thresholds are
+ * deliberately coarse. Against warning radii of 100 m and up there is nothing to
+ * gain from a fix every second, and a lot to lose — this may run for a whole
+ * journey on a phone the user also needs for navigation.
+ *
+ * Foreground only. The subscription stops when the app is backgrounded; Phase 8
+ * adds the opt-in background equivalent.
+ *
+ * @returns an unsubscribe function. Callers must call it on unmount.
+ */
+export async function watchPosition(
+  onUpdate: (location: UserLocation) => void,
+  options: {
+    mode?: LocationAccuracyMode;
+    minimumIntervalMs?: number;
+    minimumDistanceM?: number;
+  } = {},
+): Promise<() => void> {
+  const {
+    mode = 'balanced',
+    // A vehicle at 50 km/h covers ~70 m in 5 s, which is well inside the
+    // smallest supported radius — so no zone can be crossed unnoticed.
+    minimumIntervalMs = 5000,
+    minimumDistanceM = 25,
+  } = options;
+
+  const permission = await getPermissionStatus();
+  if (permission !== 'granted') {
+    throw new AppError('permission', 'Location access is needed to warn you about nearby areas.', {
+      technicalMessage: `Cannot watch position; permission is "${permission}".`,
+    });
+  }
+
+  const subscription = await Location.watchPositionAsync(
+    {
+      accuracy: ACCURACY_BY_MODE[mode],
+      timeInterval: minimumIntervalMs,
+      distanceInterval: minimumDistanceM,
+      mayShowUserSettingsDialog: false,
+    },
+    (position) => {
+      const candidate = {
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+      };
+      // A bad fix mid-stream would corrupt every distance calculation
+      // downstream, so it is dropped rather than propagated.
+      if (!isValidCoordinate(candidate)) {
+        return;
+      }
+      onUpdate({
+        ...candidate,
+        accuracyM: position.coords.accuracy ?? null,
+        timestamp: position.timestamp,
+      });
+    },
+  );
+
+  return () => subscription.remove();
+}
+
+/**
  * Last known position, if the OS has one cached.
  *
  * Returns instantly where `getCurrentLocation` may take several seconds waiting

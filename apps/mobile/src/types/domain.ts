@@ -5,7 +5,6 @@
  * with their Zod schemas and Firestore converters, so runtime validation and
  * types always arrive as a pair.
  *
- * TODO(phase-4): add BlackSpot and AlertLog.
  * TODO(phase-5): add IncidentReport.
  * TODO(phase-6): add EmergencyContact.
  */
@@ -91,3 +90,84 @@ export type UserProfilePreferences = Pick<
   | 'soundEnabled'
   | 'darkModePreference'
 >;
+
+// -----------------------------------------------------------------------------
+// Black spot
+// -----------------------------------------------------------------------------
+
+/** How a black spot came to exist. Drives how much trust the UI conveys. */
+export const BLACK_SPOT_SOURCES = ['manual', 'reports', 'algorithm', 'official'] as const;
+export type BlackSpotSource = (typeof BLACK_SPOT_SOURCES)[number];
+
+/**
+ * A published black spot at `blackSpots/{id}`.
+ *
+ * Only documents with `verified === true` **and** `active === true` are ever
+ * shown to users or used for alerting. Everything else — algorithm candidates,
+ * deactivated spots, records still under review — stays invisible. That rule is
+ * enforced in the query, in the Firestore security rules, and again on read, so
+ * no single mistake can surface an unverified hazard as an official one.
+ */
+export interface BlackSpot {
+  id: string;
+  name: string;
+  description?: string;
+  category: BlackSpotCategory;
+  latitude: number;
+  longitude: number;
+  /**
+   * Geohash of the coordinates, written by whoever creates the document.
+   *
+   * Firestore has no native radius query, so nearby lookups are done as
+   * range queries over this field — see blackSpotRepository.
+   */
+  geohash: string;
+  /** Warning radius in metres. */
+  radiusM: number;
+  riskLevel: RiskLevel;
+  /** Normalised 0–100, produced by the analytics service in Phase 10. */
+  severityScore: number;
+  accidentCount: number;
+  crimeCount: number;
+  reportCount: number;
+  verified: boolean;
+  active: boolean;
+  source: BlackSpotSource;
+  createdBy: string;
+  createdAt: Timestamp | null;
+  updatedAt: Timestamp | null;
+}
+
+/** A black spot paired with the user's current distance from it. */
+export interface NearbyBlackSpot {
+  spot: BlackSpot;
+  /** Great-circle distance from the user, in metres. */
+  distanceM: number;
+}
+
+// -----------------------------------------------------------------------------
+// Alert log
+// -----------------------------------------------------------------------------
+
+export const ALERT_TYPES = ['foreground', 'background', 'push'] as const;
+export type AlertType = (typeof ALERT_TYPES)[number];
+
+/**
+ * A record that the user was warned, at `alertLogs/{id}`.
+ *
+ * Coordinates are deliberately **optional** and are not written by the app in
+ * Phase 4. Storing a position with every alert would build exactly the
+ * continuous location history the project promised not to keep — the user is
+ * told their location is not uploaded. The black spot id already says where the
+ * alert happened, to the precision anyone needs.
+ */
+export interface AlertLog {
+  id: string;
+  userId: string;
+  blackSpotId: string;
+  distanceM: number;
+  alertType: AlertType;
+  latitude?: number;
+  longitude?: number;
+  createdAt: Timestamp | null;
+}

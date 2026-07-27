@@ -14,7 +14,7 @@ alerts, supports incident reporting, and provides emergency SOS assistance.
 
 ## Build status
 
-This project is being built in phases. **Phase 3 of 15 is complete.**
+This project is being built in phases. **Phase 4 of 15 is complete.**
 
 | Phase | Scope                                    | Status                    |
 | ----- | ---------------------------------------- | ------------------------- |
@@ -22,7 +22,7 @@ This project is being built in phases. **Phase 3 of 15 is complete.**
 | 1     | Expo foundation and design system        | ✅ Complete               |
 | 2     | Firebase and authentication              | ✅ Complete               |
 | 3     | Location permissions and map MVP         | ✅ Complete (see caveat†) |
-| 4     | Black spot database and proximity alerts | ⬜ Not started            |
+| 4     | Black spot database and proximity alerts | ✅ Complete               |
 | 5     | Crowdsourced incident reporting          | ⬜ Not started            |
 | 6     | Emergency contacts and SOS               | ⬜ Not started            |
 | 7     | Admin dashboard and moderation           | ⬜ Not started            |
@@ -35,16 +35,17 @@ This project is being built in phases. **Phase 3 of 15 is complete.**
 | 14    | CI/CD, builds, release preparation       | ⬜ Not started            |
 | 15    | Documentation and demonstration          | ⬜ Not started            |
 
-**What works today:** registration, sign-in, sign-out and password reset against the Firebase
-Emulator Suite; a Firestore user profile created on registration and read back into Settings; a
-signed-in session that survives a full app restart; protected tabs; a location permission flow that
-explains itself before prompting and handles granted / denied / permanently-denied distinctly; a map
-showing your position and three sample black spots with warning-radius circles, tappable to a detail
-sheet and a detail screen; the design system in light and dark themes; startup environment
-validation; and an error boundary around the whole tree.
+**What works today:** the full account flow (register, sign in, sign out, password reset) against
+the Firebase Emulator Suite, with a session that survives a restart; a location permission flow that
+explains itself before prompting and handles granted / denied / permanently-denied distinctly;
+**verified black spots loaded from Firestore by geohash proximity query**, drawn on the map with
+warning-radius circles; and **live proximity warnings** — one alert on entry, none while you stay
+inside, hysteresis and a cooldown before another can fire, overlapping zones combined into a single
+warning, delivered as an in-app banner plus a local notification and haptics. Warnings work offline
+from a saved copy, clearly labelled as such.
 
-**What does not work yet:** no real black spot data, no proximity warnings, no reporting and no SOS.
-Those screens exist as labelled placeholders.
+**What does not work yet:** no incident reporting, no SOS, no background monitoring. Those screens
+exist as labelled placeholders.
 
 > **† Android map tiles need your own Google Maps API key.** The map screen — permission flow,
 > location acquisition, and the rest of the app — works on Android, but the map _tiles_ render as a
@@ -161,6 +162,17 @@ The Emulator UI is then at <http://localhost:4000> — useful for inspecting acc
 while testing. Emulator data is in-memory and discarded on exit; use `npm run emulators:persist` to
 keep it between runs. See [`firebase/README.md`](firebase/README.md) for details.
 
+**Seed some black spots**, or the map will be empty. Pass the coordinates you are testing from — the
+demo spots are placed relative to that point, so they land wherever your simulator or device is:
+
+```bash
+npm run seed -- 37.7749 -122.4194
+```
+
+That writes seven records: five verified and active (which should appear), plus one unverified and
+one inactive (which must **not** appear — they are there to prove the filtering works). Re-running it
+with different coordinates repositions them.
+
 Then start Metro and choose a target interactively:
 
 ```bash
@@ -237,11 +249,15 @@ npm run format
 - **Feature work is incomplete by design.** Only Phases 0–3 are done; see the table above.
 - **Android map tiles require your own Google Maps Platform key** — see the note in Build status.
   Everything else on Android works; only the tiles and map overlays are affected.
-- **Black spots on the map are synthetic.** Three samples are projected around your current position
-  so the map is reviewable anywhere. They are labelled as sample data in the UI and are replaced by
-  approved Firestore records in Phase 4.
-- **Location is read on demand, not continuously.** There is no background tracking and no location
-  history; both arrive, opt-in, in Phase 8.
+- **Proximity checking is foreground only.** The position stream stops when the app is backgrounded.
+  Opt-in background monitoring arrives in Phase 8.
+- **Notifications are limited under Expo Go.** Expo Go warns that `expo-notifications` is not fully
+  supported since SDK 53. The in-app banner — the channel that always works — is unaffected. A
+  development build in Phase 8 removes the limitation.
+- **No location history is stored.** Alert logs deliberately record the black spot and distance but
+  **not** coordinates, and the offline cache rounds the stored centre to roughly 1 km.
+- **Demo black spots are seeded, not real.** `npm run seed` writes a small demo dataset to the
+  emulator, including one unverified and one inactive record that must never appear in the app.
 - **Emulators only so far.** Authentication and Firestore have been exercised against the local
   Emulator Suite, not a real Firebase project. Pointing at production is a config change
   (`.env`), but that path has not been tested.

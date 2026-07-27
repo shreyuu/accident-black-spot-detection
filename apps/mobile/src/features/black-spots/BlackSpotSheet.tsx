@@ -2,34 +2,38 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppButton, AppText, RiskBadge } from '@/components';
-import {
-  CATEGORY_GUIDANCE,
-  CATEGORY_LABELS,
-  type SampleBlackSpot,
-} from '@/features/black-spots/sampleBlackSpots';
+import { CATEGORY_GUIDANCE, CATEGORY_LABELS } from '@/features/black-spots/blackSpotCopy';
 import { useTheme } from '@/theme';
+import type { BlackSpot } from '@/types/domain';
 import { formatDistance, haversineDistanceM, type Coordinates } from '@/utils/geo';
 
 export interface BlackSpotSheetProps {
-  spot: SampleBlackSpot;
+  spot: BlackSpot;
   /** User position, for the distance readout. Null when unavailable. */
   userLocation: Coordinates | null;
+  /** Radius the alert engine is actually using for this spot. */
+  effectiveRadiusM: number;
   onClose: () => void;
-  onOpenDetail: (spot: SampleBlackSpot) => void;
+  onOpenDetail: (spot: BlackSpot) => void;
 }
 
 /**
  * Bottom sheet summarising a tapped black spot.
  *
- * Implemented as a plain absolutely-positioned view rather than a gesture-driven
- * sheet library. The content is short, fixed-height and needs no drag states, so
- * a dependency would add native surface area for no user-visible benefit.
+ * A plain absolutely-positioned view rather than a gesture-driven sheet library:
+ * the content is short, fixed-height and needs no drag states, so a dependency
+ * would add native surface area for no user-visible benefit.
  *
- * Kept deliberately brief: this app is used in or near traffic, and the
- * guideline the project set itself is that a warning must be readable at a
- * glance and must never occupy the whole screen.
+ * Kept deliberately brief — this app is used in or near traffic, and a warning
+ * must be readable at a glance and must never occupy the whole screen.
  */
-export function BlackSpotSheet({ spot, userLocation, onClose, onOpenDetail }: BlackSpotSheetProps) {
+export function BlackSpotSheet({
+  spot,
+  userLocation,
+  effectiveRadiusM,
+  onClose,
+  onOpenDetail,
+}: BlackSpotSheetProps) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
 
@@ -38,10 +42,11 @@ export function BlackSpotSheet({ spot, userLocation, onClose, onOpenDetail }: Bl
       ? null
       : haversineDistanceM(userLocation, { latitude: spot.latitude, longitude: spot.longitude });
 
+  const isInside = distanceM !== null && distanceM <= effectiveRadiusM;
+
   return (
     <View
       testID="black-spot-sheet"
-      accessibilityViewIsModal={false}
       style={[
         styles.sheet,
         theme.elevation(3),
@@ -77,15 +82,17 @@ export function BlackSpotSheet({ spot, userLocation, onClose, onOpenDetail }: Bl
 
       <View style={{ gap: theme.spacing.xxs }}>
         <AppText variant="bodySmall" color="textMuted">
-          {CATEGORY_LABELS[spot.category]} · warning radius {spot.radiusM} m
+          {CATEGORY_LABELS[spot.category]} · warning radius {effectiveRadiusM} m
         </AppText>
         {distanceM === null ? (
           <AppText variant="bodySmall" color="textSubtle">
             Distance unavailable — your location is not known.
           </AppText>
         ) : (
-          <AppText variant="bodySmall" color="textMuted">
-            About {formatDistance(distanceM)} away
+          <AppText variant="bodySmall" color={isInside ? 'danger' : 'textMuted'}>
+            {isInside
+              ? 'You are inside this warning zone.'
+              : `About ${formatDistance(distanceM)} away`}
           </AppText>
         )}
       </View>

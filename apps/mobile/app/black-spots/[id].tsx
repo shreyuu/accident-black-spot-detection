@@ -1,52 +1,86 @@
+import { useQuery } from '@tanstack/react-query';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { useMemo } from 'react';
 import { View } from 'react-native';
 
-import { AppText, EmptyState, RiskBadge, ScreenContainer } from '@/components';
-import { COVERAGE_DISCLAIMER, LOCATION_ACCURACY_DISCLAIMER } from '@/constants/disclaimer';
 import {
-  buildSampleBlackSpots,
+  AppText,
+  EmptyState,
+  ErrorState,
+  LoadingIndicator,
+  RiskBadge,
+  ScreenContainer,
+} from '@/components';
+import { COVERAGE_DISCLAIMER, LOCATION_ACCURACY_DISCLAIMER } from '@/constants/disclaimer';
+import { effectiveRadiusM } from '@/features/alerts/proximityEngine';
+import { useAuth } from '@/features/auth/AuthProvider';
+import { fetchBlackSpotById } from '@/features/black-spots/blackSpotRepository';
+import {
   CATEGORY_GUIDANCE,
   CATEGORY_LABELS,
-} from '@/features/black-spots/sampleBlackSpots';
+  SOURCE_LABELS,
+} from '@/features/black-spots/blackSpotCopy';
 import { useLocation } from '@/features/location/useLocation';
 import { useTheme } from '@/theme';
 import { formatDistance, haversineDistanceM } from '@/utils/geo';
+import { toAppError } from '@/utils/errors';
 
 /**
  * Black spot detail.
  *
- * Phase 3 resolves the id against the generated samples. Phase 4 replaces this
- * with a Firestore lookup by document id, at which point the route also has to
- * handle loading and not-found states from the network rather than just a
- * missing id.
+ * Looked up through the repository, which only ever returns verified and active
+ * records — so a deactivated or unverified spot reached by a stale link resolves
+ * to "not available" rather than being displayed as an official hazard.
  */
 export default function BlackSpotDetailScreen() {
   const theme = useTheme();
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { location } = useLocation('balanced');
+  const { profile } = useAuth();
 
-  // Samples are positioned relative to the user, so the same anchor rounding as
-  // the map is applied here — otherwise the two screens would disagree about
-  // where a spot is by a few metres.
-  const spot = useMemo(() => {
-    if (location === null) {
-      return null;
-    }
-    const anchor = {
-      latitude: Math.round(location.latitude * 1000) / 1000,
-      longitude: Math.round(location.longitude * 1000) / 1000,
-    };
-    return buildSampleBlackSpots(anchor).find((candidate) => candidate.id === id) ?? null;
-  }, [id, location]);
+  const userAlertRadiusM = profile?.alertRadiusM ?? 1000;
 
-  const distanceM = useMemo(() => {
-    if (spot === null || location === null) {
-      return null;
-    }
-    return haversineDistanceM(location, { latitude: spot.latitude, longitude: spot.longitude });
-  }, [location, spot]);
+  const query = useQuery({
+    queryKey: ['blackSpot', id],
+    enabled: location !== null && typeof id === 'string',
+    queryFn: async () => {
+      if (location === null || typeof id !== 'string') {
+        return null;
+      }
+      return fetchBlackSpotById(id, location);
+    },
+  });
+
+  if (location === null || query.isLoading) {
+    return (
+      <>
+        <Stack.Screen options={{ title: 'Black spot' }} />
+        <ScreenContainer testID="black-spot-detail-loading">
+          <LoadingIndicator
+            fullscreen
+            message={location === null ? 'Finding your location…' : 'Loading this location…'}
+          />
+        </ScreenContainer>
+      </>
+    );
+  }
+
+  if (query.error !== null) {
+    return (
+      <>
+        <Stack.Screen options={{ title: 'Black spot' }} />
+        <ScreenContainer testID="black-spot-detail-error">
+          <ErrorState
+            error={toAppError(query.error)}
+            title="Could not load this location"
+            onRetry={() => void query.refetch()}
+          />
+        </ScreenContainer>
+      </>
+    );
+  }
+
+  const spot = query.data ?? null;
 
   if (spot === null) {
     return (
@@ -55,11 +89,7 @@ export default function BlackSpotDetailScreen() {
         <ScreenContainer testID="black-spot-detail-missing">
           <EmptyState
             title="This location is not available"
-            description={
-              location === null
-                ? 'Your location is needed to show this place. Allow location access on the Map tab and try again.'
-                : 'It may have been removed, or the link may be out of date.'
-            }
+            description="It may have been removed or deactivated, or it may be too far away to load."
             action={{ label: 'Back to the map', onPress: () => router.replace('/(tabs)/map') }}
           />
         </ScreenContainer>
@@ -67,7 +97,13 @@ export default function BlackSpotDetailScreen() {
     );
   }
 
-  const isInsideRadius = distanceM !== null && distanceM <= spot.radiusM;
+  const distanceM = haversineDistanceM(location, {
+    latitude: spot.latitude,
+    longitude: spot.longitude,
+  });
+  const radiusM = effectiveRadiusM(spot, userAlertRadiusM);
+  const isInsideRadius = distanceM <= radiusM;
+  const evidenceCount = spot.accidentCount + spot.crimeCount;
 
   return (
     <>
@@ -82,9 +118,11 @@ export default function BlackSpotDetailScreen() {
           {/* ---------------------------------------------------------------- */}
           <View style={{ gap: theme.spacing.sm }}>
             <AppText variant="titleSmall">What to expect</AppText>
-            <AppText variant="body" color="textMuted">
-              {spot.description}
-            </AppText>
+            {spot.description !== undefined ? (
+              <AppText variant="body" color="textMuted">
+                {spot.description}
+              </AppText>
+            ) : null}
             <AppText variant="body">{CATEGORY_GUIDANCE[spot.category]}</AppText>
           </View>
 
@@ -93,11 +131,15 @@ export default function BlackSpotDetailScreen() {
             <AppText variant="titleSmall">Details</AppText>
 
             <DetailRow label="Category" value={CATEGORY_LABELS[spot.category]} />
-            <DetailRow label="Warning radius" value={`${spot.radiusM} m`} />
-            <DetailRow
-              label="Distance from you"
-              value={distanceM === null ? 'Unavailable' : `About ${formatDistance(distanceM)}`}
-            />
+            <DetailRow label="Warning radius" value={`${radiusM} m`} />
+            <DetailRow label="Distance from you" value={`About ${formatDistance(distanceM)}`} />
+            {evidenceCount > 0 ? (
+              <DetailRow
+                label="Recorded incidents"
+                value={`${evidenceCount} (${spot.accidentCount} accident, ${spot.crimeCount} crime)`}
+              />
+            ) : null}
+
             {isInsideRadius ? (
               <AppText variant="bodySmall" color="danger">
                 You are currently inside this warning zone.
@@ -115,11 +157,13 @@ export default function BlackSpotDetailScreen() {
             }}
           >
             <AppText variant="label" color="textMuted">
-              Sample data
+              Where this comes from
             </AppText>
             <AppText variant="caption" color="textMuted">
-              This is a development placeholder, not a real reported location. Verified black spots
-              from the database arrive in Phase 4.
+              {SOURCE_LABELS[spot.source]}
+              {spot.reportCount > 0
+                ? ` · ${spot.reportCount} approved ${spot.reportCount === 1 ? 'report' : 'reports'}`
+                : ''}
             </AppText>
           </View>
 
@@ -149,7 +193,9 @@ function DetailRow({ label, value }: { label: string; value: string }) {
       <AppText variant="bodySmall" color="textMuted">
         {label}
       </AppText>
-      <AppText variant="bodySmall">{value}</AppText>
+      <AppText variant="bodySmall" style={{ flexShrink: 1, textAlign: 'right' }}>
+        {value}
+      </AppText>
     </View>
   );
 }

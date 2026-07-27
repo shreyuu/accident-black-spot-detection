@@ -2,17 +2,28 @@ import { StyleSheet, View } from 'react-native';
 import { Circle, Marker } from 'react-native-maps';
 
 import { AppText } from '@/components/AppText';
-import type { SampleBlackSpot } from '@/features/black-spots/sampleBlackSpots';
 import { useTheme } from '@/theme';
-import { RISK_LEVEL_LABELS, type RiskLevel } from '@/types/domain';
+import type { BlackSpot, RiskLevel } from '@/types/domain';
+import { RISK_LEVEL_LABELS } from '@/types/domain';
 
 export interface BlackSpotMarkerProps {
-  spot: SampleBlackSpot;
-  onPress: (spot: SampleBlackSpot) => void;
+  spot: BlackSpot;
+  /**
+   * Radius to draw, in metres.
+   *
+   * Passed in rather than read from `spot.radiusM` so the circle matches the
+   * radius the alert engine actually uses — the engine narrows it to the user's
+   * setting. A warning that fired outside the drawn circle would look like a bug
+   * and undermine trust in the warnings that matter.
+   */
+  radiusM: number;
+  /** Emphasises the circle when the user is currently inside it. */
+  isInside: boolean;
+  onPress: (spot: BlackSpot) => void;
 }
 
-/** Fill and stroke opacity per risk level, so severity reads at a glance. */
-const CIRCLE_OPACITY: Record<RiskLevel, { fill: string; strokeWidth: number }> = {
+/** Fill alpha and stroke weight per risk level, so severity reads at a glance. */
+const CIRCLE_STYLE: Record<RiskLevel, { fill: string; strokeWidth: number }> = {
   low: { fill: '22', strokeWidth: 1.5 },
   medium: { fill: '2E', strokeWidth: 2 },
   high: { fill: '3A', strokeWidth: 2.5 },
@@ -22,15 +33,12 @@ const CIRCLE_OPACITY: Record<RiskLevel, { fill: string; strokeWidth: number }> =
 /**
  * A black spot rendered as a warning-radius circle plus a tappable marker.
  *
- * The marker uses a custom child view rather than a default pin so that the risk
- * level appears as **text** on the map itself. A coloured pin alone would make
- * severity a colour-only signal, which fails for colour-blind users and in
- * bright sunlight — both very likely for a road-safety app used outdoors.
- *
- * The circle shows the real warning radius in map units, so it grows and shrinks
- * correctly with zoom and honestly represents the area covered.
+ * The marker uses a custom child view rather than a default pin so the risk level
+ * appears as **text** on the map itself. A coloured pin alone would make severity
+ * a colour-only signal, which fails for colour-blind users and in bright
+ * sunlight — both very likely for a road-safety app used outdoors.
  */
-export function BlackSpotMarker({ spot, onPress }: BlackSpotMarkerProps) {
+export function BlackSpotMarker({ spot, radiusM, isInside, onPress }: BlackSpotMarkerProps) {
   const theme = useTheme();
 
   const colorFor: Record<RiskLevel, string> = {
@@ -41,19 +49,19 @@ export function BlackSpotMarker({ spot, onPress }: BlackSpotMarkerProps) {
   };
 
   const color = colorFor[spot.riskLevel];
-  const { fill, strokeWidth } = CIRCLE_OPACITY[spot.riskLevel];
+  const { fill, strokeWidth } = CIRCLE_STYLE[spot.riskLevel];
   const shortLabel = RISK_LEVEL_LABELS[spot.riskLevel].replace(' risk', '').toUpperCase();
 
   return (
     <>
       <Circle
         center={{ latitude: spot.latitude, longitude: spot.longitude }}
-        radius={spot.radiusM}
+        radius={radiusM}
         strokeColor={color}
-        // Alpha is appended as hex so the underlying map stays readable through
-        // the fill; overlapping zones must remain individually distinguishable.
-        fillColor={`${color}${fill}`}
-        strokeWidth={strokeWidth}
+        // Alpha appended as hex so the map stays readable through the fill and
+        // overlapping zones remain individually distinguishable.
+        fillColor={`${color}${isInside ? '5A' : fill}`}
+        strokeWidth={isInside ? strokeWidth + 1.5 : strokeWidth}
         zIndex={1}
       />
 
@@ -62,7 +70,9 @@ export function BlackSpotMarker({ spot, onPress }: BlackSpotMarkerProps) {
         onPress={() => onPress(spot)}
         // Announced instead of the visual pin, so a screen reader user gets the
         // name, severity and radius rather than "marker".
-        accessibilityLabel={`${spot.name}. ${RISK_LEVEL_LABELS[spot.riskLevel]}. Warning radius ${spot.radiusM} metres.`}
+        accessibilityLabel={`${spot.name}. ${RISK_LEVEL_LABELS[spot.riskLevel]}. Warning radius ${radiusM} metres.${
+          isInside ? ' You are inside this zone.' : ''
+        }`}
         accessibilityRole="button"
         tracksViewChanges={false}
         anchor={{ x: 0.5, y: 0.5 }}
