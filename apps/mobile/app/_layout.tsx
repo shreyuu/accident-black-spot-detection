@@ -3,6 +3,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 
+import { useAuth } from '@/features/auth/AuthProvider';
 import { AppProviders } from '@/providers/AppProviders';
 import { useTheme } from '@/theme';
 
@@ -26,13 +27,16 @@ export default function RootLayout() {
  */
 function RootNavigator() {
   const theme = useTheme();
+  const { status } = useAuth();
 
   useEffect(() => {
-    // Phase 1 has nothing async to wait on. From Phase 2 this hides only once
-    // the auth session has been restored, so protected routes are resolved
-    // before the first frame and no unauthenticated flash occurs.
-    void SplashScreen.hideAsync();
-  }, []);
+    // Held until the persisted session has been read, so the first frame the user
+    // sees is already the correct destination. Hiding earlier would show the
+    // login screen for a moment to someone who is actually signed in.
+    if (status !== 'restoring') {
+      void SplashScreen.hideAsync();
+    }
+  }, [status]);
 
   return (
     <>

@@ -1,21 +1,39 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { Tabs } from 'expo-router';
+import { Redirect, Tabs } from 'expo-router';
 import { StyleSheet } from 'react-native';
 
+import { LoadingIndicator, ScreenContainer } from '@/components';
+import { useAuth } from '@/features/auth/AuthProvider';
 import { useTheme } from '@/theme';
 
 /**
- * Main application tabs.
+ * Main application tabs, gated on an authenticated session.
  *
- * TODO(phase-2): guard this group so a signed-out user is redirected to
- * `(auth)/login` instead of reaching the tabs.
+ * The guard lives in the group layout rather than in each screen, so every
+ * current and future tab is protected by construction and a new screen cannot
+ * forget to check. Note this is a *usability* boundary, not a security boundary —
+ * the real enforcement is in Firestore rules, which reject unauthenticated reads
+ * regardless of what the client renders.
  *
- * Every tab carries both an icon and a text label. Icon-only tab bars are hard
- * to interpret at a glance and unusable with a screen reader, and this app is
- * used in a hurry.
+ * Every tab carries both an icon and a text label. Icon-only tab bars are hard to
+ * interpret at a glance and unusable with a screen reader, and this app is used
+ * in a hurry.
  */
 export default function TabsLayout() {
   const theme = useTheme();
+  const { status } = useAuth();
+
+  if (status === 'restoring') {
+    return (
+      <ScreenContainer>
+        <LoadingIndicator fullscreen message="Restoring your session…" />
+      </ScreenContainer>
+    );
+  }
+
+  if (status === 'unauthenticated') {
+    return <Redirect href="/(auth)/login" />;
+  }
 
   return (
     <Tabs

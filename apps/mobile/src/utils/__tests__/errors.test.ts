@@ -13,6 +13,30 @@ describe('AppError', () => {
     expect(new AppError('validation', 'Bad input.', { retryable: true }).retryable).toBe(true);
   });
 
+  /**
+   * Regression test.
+   *
+   * `unavailable` defaults to retryable, so an explicit `retryable: false` has to
+   * beat that default. It previously did not: the expression computing
+   * `retryable` bound as `(explicit ?? isNetwork) || isUnavailable`, so `false`
+   * was silently promoted back to `true` for this kind.
+   *
+   * The visible consequence was a rate-limited sign-in ("too many attempts, wait
+   * a few minutes") rendering a "Try again" button, inviting the user to keep
+   * hitting a lockout that only clears with time.
+   */
+  it('honours an explicit retryable:false even for kinds that default to retryable', () => {
+    expect(new AppError('unavailable', 'Rate limited.', { retryable: false }).retryable).toBe(
+      false,
+    );
+    expect(new AppError('network', 'Rate limited.', { retryable: false }).retryable).toBe(false);
+  });
+
+  it('still defaults network and unavailable to retryable when unspecified', () => {
+    expect(new AppError('network', 'Offline.').retryable).toBe(true);
+    expect(new AppError('unavailable', 'Down.').retryable).toBe(true);
+  });
+
   it('keeps the technical message separate from the user-facing one', () => {
     const error = new AppError('unknown', 'Something went wrong.', {
       technicalMessage: 'FIRESTORE INTERNAL ASSERTION FAILED',

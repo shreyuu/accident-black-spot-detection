@@ -1,33 +1,36 @@
-import { useRouter } from 'expo-router';
-import { useEffect } from 'react';
+import { Redirect } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
 
-import { AppButton, AppText, DisclaimerNotice, LoadingIndicator } from '@/components';
+import { AppText, DisclaimerNotice, LoadingIndicator } from '@/components';
+import { useAuth } from '@/features/auth/AuthProvider';
 import { useTheme } from '@/theme';
 
 /**
- * Entry route — loading/splash screen.
+ * Entry route — the session-restoration gate.
  *
- * From Phase 2 this becomes the session-restoration gate: it waits for Firebase
- * to rehydrate the persisted session, then redirects to `(tabs)` for a signed-in
- * user or `(auth)/login` otherwise, which is what keeps protected tabs
- * unreachable while logged out.
+ * Firebase reads the persisted session from SecureStore asynchronously, so on a
+ * cold start there is a brief window where it is not yet known whether anyone is
+ * signed in. This screen holds that window rather than guessing.
  *
- * In Phase 1 there is no auth yet, so it presents both entry points instead of
- * redirecting automatically. That keeps every placeholder route reachable for
- * review without pretending auth exists.
+ * Rendering a loading state during `restoring` is the important part: redirecting
+ * to login on the assumption of "signed out" would flash the login screen at
+ * every launch for a user who is in fact authenticated.
  */
 export default function IndexScreen() {
   const theme = useTheme();
-  const router = useRouter();
+  const { status } = useAuth();
 
-  useEffect(() => {
-    // TODO(phase-2): replace with a redirect driven by restored auth state:
-    //   router.replace(session === null ? '/(auth)/login' : '/(tabs)/map');
-  }, [router]);
+  if (status === 'authenticated') {
+    return <Redirect href="/(tabs)/map" />;
+  }
+
+  if (status === 'unauthenticated') {
+    return <Redirect href="/(auth)/login" />;
+  }
 
   return (
     <View
+      testID="session-gate"
       style={[
         styles.container,
         {
@@ -46,23 +49,7 @@ export default function IndexScreen() {
         </AppText>
       </View>
 
-      <LoadingIndicator message="Preparing your session…" />
-
-      <View style={{ gap: theme.spacing.sm, width: '100%' }}>
-        <AppButton
-          label="Sign in"
-          onPress={() => router.push('/(auth)/login')}
-          fullWidth
-          accessibilityHint="Opens the sign in screen"
-        />
-        <AppButton
-          label="Continue to app"
-          onPress={() => router.push('/(tabs)/map')}
-          variant="secondary"
-          fullWidth
-          accessibilityHint="Opens the map. Placeholder navigation until sign in is implemented."
-        />
-      </View>
+      <LoadingIndicator message="Restoring your session…" />
 
       <DisclaimerNotice />
     </View>

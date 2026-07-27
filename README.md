@@ -14,13 +14,13 @@ alerts, supports incident reporting, and provides emergency SOS assistance.
 
 ## Build status
 
-This project is being built in phases. **Phase 1 of 15 is complete.**
+This project is being built in phases. **Phase 2 of 15 is complete.**
 
 | Phase | Scope                                    | Status         |
 | ----- | ---------------------------------------- | -------------- |
 | 0     | Repository audit and technical plan      | ✅ Complete    |
 | 1     | Expo foundation and design system        | ✅ Complete    |
-| 2     | Firebase and authentication              | ⬜ Not started |
+| 2     | Firebase and authentication              | ✅ Complete    |
 | 3     | Location permissions and map MVP         | ⬜ Not started |
 | 4     | Black spot database and proximity alerts | ⬜ Not started |
 | 5     | Crowdsourced incident reporting          | ⬜ Not started |
@@ -35,12 +35,14 @@ This project is being built in phases. **Phase 1 of 15 is complete.**
 | 14    | CI/CD, builds, release preparation       | ⬜ Not started |
 | 15    | Documentation and demonstration          | ⬜ Not started |
 
-**What works today:** the app launches on Android and iOS, all placeholder routes are reachable
-through a bottom tab bar, the design system renders in light and dark themes, environment variables
-are validated at startup, and render errors are caught by an error boundary.
+**What works today:** registration, sign-in, sign-out and password reset against the Firebase
+Emulator Suite; a Firestore user profile created on registration and read back into Settings; a
+signed-in session that survives a full app restart; protected tabs that redirect to sign-in when
+signed out; the design system in light and dark themes; startup environment validation; and an error
+boundary around the whole tree.
 
-**What does not work yet:** there is no authentication, no map, no location access, no reporting, no
-SOS, and no data layer. Screens for those features exist as labelled placeholders.
+**What does not work yet:** no map, no location access, no reporting, no SOS, and no black spot
+data. Those screens exist as labelled placeholders.
 
 See [`docs/phase-0-audit.md`](docs/phase-0-audit.md) for the full plan and
 [`docs/adr/0001-platform-and-stack.md`](docs/adr/0001-platform-and-stack.md) for the technology
@@ -120,8 +122,8 @@ Install dependencies from the repository root (npm workspaces links `apps/mobile
 npm install
 ```
 
-Create the mobile app's environment file. Every value is optional in Phase 1, so the app runs
-straight away with validated defaults:
+Create the mobile app's environment file. The defaults in `.env.example` point at the local Firebase
+Emulator Suite and work as-is — no Firebase account, credentials or billing needed:
 
 ```bash
 cp .env.example apps/mobile/.env
@@ -135,7 +137,18 @@ key or service-account credential in them.
 
 ## Running the app
 
-Start Metro and choose a target interactively:
+**Start the Firebase emulators first**, in their own terminal. Authentication and Firestore will not
+work without them:
+
+```bash
+npm run emulators
+```
+
+The Emulator UI is then at <http://localhost:4000> — useful for inspecting accounts and documents
+while testing. Emulator data is in-memory and discarded on exit; use `npm run emulators:persist` to
+keep it between runs. See [`firebase/README.md`](firebase/README.md) for details.
+
+Then start Metro and choose a target interactively:
 
 ```bash
 npm start
@@ -208,9 +221,19 @@ npm run format
 
 ## Known limitations
 
-- **Feature work is incomplete by design.** Only Phases 0 and 1 are done; see the table above.
+- **Feature work is incomplete by design.** Only Phases 0–2 are done; see the table above.
+- **Emulators only so far.** Authentication and Firestore have been exercised against the local
+  Emulator Suite, not a real Firebase project. Pointing at production is a config change
+  (`.env`), but that path has not been tested.
+- **Email addresses are not verified.** An account is usable immediately after registration. Email
+  verification is a Phase 12 decision.
+- **No rate limiting on registration.** Firebase applies its own throttling, but application-level
+  abuse prevention is Phase 12.
 - **Theme preference is not persisted.** Switching theme in Settings works but resets on relaunch.
   Persistence lands in Phase 11.
+- **Automated Firestore rules tests are not written yet.** The rules were verified manually against
+  the emulator during Phase 2 (including confirming the `users` collection is not listable);
+  `@firebase/rules-unit-testing` coverage arrives in Phase 7 with the admin role model.
 - **Icons and splash artwork are placeholders** carried from the Expo template. Real branding is
   produced in Phase 14.
 - **`npm audit` reports advisories in dev tooling** (`minimatch` via ESLint, `xcode` via

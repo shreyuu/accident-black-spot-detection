@@ -65,3 +65,11 @@ out/
 *.pem
 .idea/
 *.swp
+
+# Firebase emulator persisted data (npm run emulators:persist)
+.firebase-data/
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+storage-debug.log
