@@ -1,4 +1,24 @@
 {
-  "indexes": [],
+  "indexes": [
+    {
+      "//": "Nearby black spot lookup. The repository filters on verified + active and then range-scans geohash, so the composite index must order the equality fields before the range field. Without this the query fails at runtime with a FAILED_PRECONDITION.",
+      "collectionGroup": "blackSpots",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "verified", "order": "ASCENDING" },
+        { "fieldPath": "active", "order": "ASCENDING" },
+        { "fieldPath": "geohash", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "//": "A user reading back their own alert history, newest first (Phase 11 / 13).",
+      "collectionGroup": "alertLogs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    }
+  ],
   "fieldOverrides": []
 }

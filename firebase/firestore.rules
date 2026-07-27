@@ -97,6 +97,55 @@ service cloud.firestore {
     }
 
     // -------------------------------------------------------------------------
+    // blackSpots/{blackSpotId}
+    // -------------------------------------------------------------------------
+    // Readable by any signed-in user, but ONLY where the document is both
+    // verified and active. This is the rule that stops an algorithm candidate,
+    // a deactivated spot, or a record still under review from ever reaching a
+    // user as an official hazard.
+    //
+    // Note that `get` and `list` are granted separately, and `list` carries the
+    // same condition: Firestore applies rules to each document a query returns,
+    // so a query that could match an unverified document is rejected outright
+    // rather than silently filtered. The repository's `where` clauses therefore
+    // have to mirror this exactly — which is intentional, because it means a
+    // client cannot ask for unverified data at all.
+    match /blackSpots/{blackSpotId} {
+      allow get, list: if isSignedIn()
+                       && resource.data.verified == true
+                       && resource.data.active == true;
+
+      // Creating and editing black spots is an administrative action. It runs
+      // through the Admin SDK in Phase 7, which bypasses these rules; no client
+      // may write here regardless of role.
+      allow write: if false;
+    }
+
+    // -------------------------------------------------------------------------
+    // alertLogs/{alertId}
+    // -------------------------------------------------------------------------
+    // Append-only, private to the user who was alerted.
+    //
+    // `latitude`/`longitude` are permitted but never written by the app — see
+    // the note on the AlertLog type. Alert logs are write-once: allowing updates
+    // or deletes would let a client rewrite its own history, and there is no
+    // feature that needs it.
+    match /alertLogs/{alertId} {
+      allow get, list: if isSignedIn() && resource.data.userId == request.auth.uid;
+
+      allow create: if isSignedIn()
+                    && request.resource.data.userId == request.auth.uid
+                    && request.resource.data.keys().hasAll(
+                         ['userId', 'blackSpotId', 'distanceM', 'alertType', 'createdAt'])
+                    && request.resource.data.blackSpotId is string
+                    && request.resource.data.distanceM is number
+                    && request.resource.data.distanceM >= 0
+                    && request.resource.data.alertType in ['foreground', 'background', 'push'];
+
+      allow update, delete: if false;
+    }
+
+    // -------------------------------------------------------------------------
     // Everything else: denied until a phase adds an explicit rule.
     // -------------------------------------------------------------------------
     match /{document=**} {

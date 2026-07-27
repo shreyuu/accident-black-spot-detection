@@ -5,14 +5,15 @@ import { ActivityIndicator, Platform, Pressable, StyleSheet, View } from 'react-
 import MapView, { type Region } from 'react-native-maps';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { AppText, LoadingIndicator, ScreenContainer } from '@/components';
+import { AppText, EmptyState, ErrorState, LoadingIndicator, ScreenContainer } from '@/components';
 import { COVERAGE_DISCLAIMER } from '@/constants/disclaimer';
+import { ProximityAlertBanner } from '@/features/alerts/ProximityAlertBanner';
+import { effectiveRadiusM } from '@/features/alerts/proximityEngine';
+import { useProximityAlerts } from '@/features/alerts/useProximityAlerts';
+import { useAuth } from '@/features/auth/AuthProvider';
 import { BlackSpotMarker } from '@/features/black-spots/BlackSpotMarker';
 import { BlackSpotSheet } from '@/features/black-spots/BlackSpotSheet';
-import {
-  buildSampleBlackSpots,
-  SAMPLE_BLACK_SPOT_COUNT,
-} from '@/features/black-spots/sampleBlackSpots';
+import { useNearbyBlackSpots } from '@/features/black-spots/useNearbyBlackSpots';
 import { LocationPermissionGate } from '@/features/location/LocationPermissionGate';
 import { useLocation } from '@/features/location/useLocation';
 import { useTheme } from '@/theme';
@@ -21,21 +22,22 @@ import { regionDeltasForRadius } from '@/utils/geo';
 /**
  * Map screen.
  *
- * Phase 3 renders the user's position and three **sample** black spots. Phase 4
- * replaces the samples with approved Firestore records and adds the proximity
- * alerting that actually warns the user.
+ * Shows the user's position, verified black spots from Firestore, and the live
+ * proximity warning. Background monitoring is Phase 8; this screen watches
+ * position only while it is open.
  *
- * Accuracy is set to `high` here on purpose: this is the one screen where the
- * user is actively looking at their own position, so the battery cost is
- * justified. Background proximity checks use `balanced` instead.
+ * Location accuracy is `high` here because the user is actively looking at their
+ * own position. The proximity watcher inside `useProximityAlerts` runs at
+ * `balanced` instead — the same fix quality would cost battery for nothing
+ * against radii of 100 m and up.
  */
 
 /**
  * Vertical space to leave for the open detail sheet, in points.
  *
- * A measured constant rather than a `onLayout` read: the sheet has fixed content
- * and measuring it would add a render pass and a frame of visible jumping for no
- * practical gain.
+ * A measured constant rather than an `onLayout` read: the sheet has fixed
+ * content, and measuring it would add a render pass and a frame of visible
+ * jumping for no practical gain.
  */
 const SHEET_CLEARANCE = 300;
 
@@ -44,51 +46,53 @@ export default function MapScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const mapRef = useRef<MapView | null>(null);
+  const { profile } = useAuth();
 
   const {
     permission,
     location,
-    loading,
-    error,
+    loading: locationLoading,
+    error: locationError,
     initialising,
     requestAccess,
     refresh,
     openSettings,
   } = useLocation('high');
 
-  /**
-   * Only the id is held in state; the spot itself is derived below.
-   *
-   * Storing the object would mean keeping a second copy in sync with `spots`,
-   * which is recomputed whenever the user moves far enough to re-anchor the
-   * samples. Deriving it makes a stale selection resolve to `null` for free
-   * instead of needing an effect to clean up after itself.
-   */
+  const {
+    spots,
+    loading: spotsLoading,
+    error: spotsError,
+    isFromCache,
+    isStale,
+    refetch,
+  } = useNearbyBlackSpots(location);
+
+  const alertsEnabled = profile?.alertsEnabled ?? true;
+  const userAlertRadiusM = profile?.alertRadiusM ?? 1000;
+
+  const { activeAlert, dismissAlert, insideNow, watchedLocation } = useProximityAlerts({
+    spots,
+    initialLocation: location,
+    enabled: permission === 'granted' && location !== null,
+  });
+
+  // The watched position is fresher than the one-shot fix once the stream is
+  // running, so distances and the "inside" highlight track the user.
+  const currentLocation = watchedLocation ?? location;
+
   const [selectedSpotId, setSelectedSpotId] = useState<string | null>(null);
+  const selectedSpot = useMemo(
+    () => spots.find((spot) => spot.id === selectedSpotId) ?? null,
+    [selectedSpotId, spots],
+  );
 
-  /**
-   * Samples are positioned relative to the user, so they are recomputed only
-   * when the user moves a meaningful distance rather than on every GPS tick —
-   * otherwise the markers would jitter continuously.
-   */
-  const anchor = useMemo(() => {
-    if (location === null) {
-      return null;
-    }
-    // ~3 decimal places is about 100 m, a sensible granularity for re-anchoring.
-    return {
-      latitude: Math.round(location.latitude * 1000) / 1000,
-      longitude: Math.round(location.longitude * 1000) / 1000,
-    };
-  }, [location]);
-
-  const spots = useMemo(() => (anchor === null ? [] : buildSampleBlackSpots(anchor)), [anchor]);
+  const insideIds = useMemo(() => new Set(insideNow.map((entry) => entry.spot.id)), [insideNow]);
 
   const initialRegion = useMemo<Region | null>(() => {
     if (location === null) {
       return null;
     }
-    // Framed to a 1500 m radius so all three samples are visible at first paint.
     const { latitudeDelta, longitudeDelta } = regionDeltasForRadius(location, 1500);
     return {
       latitude: location.latitude,
@@ -100,27 +104,18 @@ export default function MapScreen() {
 
   const recentre = useCallback(() => {
     void refresh('high');
-    if (location !== null && mapRef.current !== null) {
-      const { latitudeDelta, longitudeDelta } = regionDeltasForRadius(location, 1500);
+    const target = watchedLocation ?? location;
+    if (target !== null && mapRef.current !== null) {
+      const { latitudeDelta, longitudeDelta } = regionDeltasForRadius(target, 1500);
       mapRef.current.animateToRegion(
-        {
-          latitude: location.latitude,
-          longitude: location.longitude,
-          latitudeDelta,
-          longitudeDelta,
-        },
+        { latitude: target.latitude, longitude: target.longitude, latitudeDelta, longitudeDelta },
         400,
       );
     }
-  }, [location, refresh]);
-
-  const selectedSpot = useMemo(
-    () => spots.find((spot) => spot.id === selectedSpotId) ?? null,
-    [selectedSpotId, spots],
-  );
+  }, [location, refresh, watchedLocation]);
 
   // Permission or device problem — show the explanation instead of a blank map.
-  const mapIsUsable = permission === 'granted' && error === null && !initialising;
+  const mapIsUsable = permission === 'granted' && locationError === null && !initialising;
 
   if (!mapIsUsable) {
     return (
@@ -130,7 +125,7 @@ export default function MapScreen() {
 
           <LocationPermissionGate
             permission={permission}
-            error={error}
+            error={locationError}
             initialising={initialising}
             onRequestAccess={() => void requestAccess()}
             onOpenSettings={() => void openSettings()}
@@ -162,64 +157,63 @@ export default function MapScreen() {
         // iOS uses Apple Maps by default and needs no API key.
         //
         // Android has no non-Google provider, and tiles require a Google Maps
-        // Platform key. Note that Expo Go does NOT reliably supply a working one:
-        // verified on the Pixel_9 emulator, its bundled key fails with
-        // "Google Maps Android API: Authorization failure … StatusCode=
-        // INVALID_ARGUMENT", leaving a blank grid. Set
-        // EXPO_PUBLIC_GOOGLE_MAPS_API_KEY_ANDROID (wired up in app.config.ts) to
-        // render tiles on Android.
+        // Platform key. Expo Go does NOT reliably supply a working one: verified
+        // on the Pixel_9 emulator, its bundled key fails with "Google Maps
+        // Android API: Authorization failure … StatusCode=INVALID_ARGUMENT",
+        // leaving a blank grid. Set EXPO_PUBLIC_GOOGLE_MAPS_API_KEY_ANDROID
+        // (wired up in app.config.ts) to render tiles on Android.
         showsUserLocation
         showsMyLocationButton={false}
         showsCompass={false}
         toolbarEnabled={false}
-        // Dismisses the sheet when the user taps empty map, which is the gesture
-        // people reach for instinctively.
-        //
-        // The `action` guard is essential: a marker tap ALSO fires the map's
-        // own onPress, so without it the marker would select a spot and this
-        // handler would immediately deselect it — the sheet never appeared.
+        // The `action` guard is essential: a marker tap ALSO fires the map's own
+        // onPress, so without it the marker would select a spot and this handler
+        // would immediately deselect it — the sheet would never appear.
         onPress={(event) => {
           if (event.nativeEvent.action !== 'marker-press') {
             setSelectedSpotId(null);
           }
         }}
-        accessibilityLabel={`Map showing your location and ${SAMPLE_BLACK_SPOT_COUNT} sample black spots nearby.`}
+        accessibilityLabel={`Map showing your location and ${spots.length} black spots nearby.`}
       >
         {spots.map((spot) => (
           <BlackSpotMarker
             key={spot.id}
             spot={spot}
+            radiusM={effectiveRadiusM(spot, userAlertRadiusM)}
+            isInside={insideIds.has(spot.id)}
             onPress={(tapped) => setSelectedSpotId(tapped.id)}
           />
         ))}
       </MapView>
 
-      {/* Sample-data banner. Phase 4 removes this with the samples themselves. */}
-      <View
-        style={[
-          styles.banner,
-          theme.elevation(2),
-          {
-            backgroundColor: theme.colors.surface,
-            borderRadius: theme.radius.md,
-            marginTop: insets.top + theme.spacing.sm,
-            marginHorizontal: theme.spacing.lg,
-            padding: theme.spacing.md,
-          },
-        ]}
-        accessibilityRole="summary"
-      >
-        <AppText variant="caption" color="textMuted">
-          Showing {SAMPLE_BLACK_SPOT_COUNT} sample locations for development. Real black spots and
-          proximity warnings arrive in Phase 4.
-        </AppText>
-      </View>
+      {/* The live warning. Rendered above everything, but never full-screen. */}
+      {activeAlert !== null ? (
+        <ProximityAlertBanner
+          alert={activeAlert}
+          onDismiss={dismissAlert}
+          onOpenDetail={(blackSpotId) => {
+            dismissAlert();
+            router.push({ pathname: '/black-spots/[id]', params: { id: blackSpotId } });
+          }}
+        />
+      ) : (
+        <StatusStrip
+          spotCount={spots.length}
+          loading={spotsLoading}
+          error={spotsError}
+          isFromCache={isFromCache}
+          isStale={isStale}
+          alertsEnabled={alertsEnabled}
+          onRetry={refetch}
+        />
+      )}
 
       <Pressable
         onPress={recentre}
         accessibilityRole="button"
         accessibilityLabel="Re-centre the map on your location"
-        accessibilityState={{ busy: loading }}
+        accessibilityState={{ busy: locationLoading }}
         hitSlop={8}
         style={[
           styles.recentre,
@@ -227,8 +221,6 @@ export default function MapScreen() {
           {
             backgroundColor: theme.colors.surface,
             borderRadius: theme.radius.pill,
-            // Lifted clear of the sheet when one is open so the control is never
-            // hidden behind it.
             bottom: insets.bottom + (selectedSpot === null ? theme.spacing.xxl : SHEET_CLEARANCE),
             height: theme.minTouchTarget,
             right: theme.spacing.lg,
@@ -236,7 +228,7 @@ export default function MapScreen() {
           },
         ]}
       >
-        {loading ? (
+        {locationLoading ? (
           <ActivityIndicator size="small" color={theme.colors.primary} />
         ) : (
           <Ionicons
@@ -247,10 +239,11 @@ export default function MapScreen() {
         )}
       </Pressable>
 
-      {selectedSpot !== null ? (
+      {selectedSpot !== null && currentLocation !== null ? (
         <BlackSpotSheet
           spot={selectedSpot}
-          userLocation={location}
+          userLocation={currentLocation}
+          effectiveRadiusM={effectiveRadiusM(selectedSpot, userAlertRadiusM)}
           onClose={() => setSelectedSpotId(null)}
           onOpenDetail={(spot) => {
             setSelectedSpotId(null);
@@ -262,8 +255,94 @@ export default function MapScreen() {
   );
 }
 
+/**
+ * Small status strip shown when no warning is active.
+ *
+ * Its job is honesty: say when data is cached and possibly out of date, when
+ * nothing was found, and when alerts are switched off — rather than letting an
+ * empty map imply "no hazards here".
+ */
+function StatusStrip({
+  spotCount,
+  loading,
+  error,
+  isFromCache,
+  isStale,
+  alertsEnabled,
+  onRetry,
+}: {
+  spotCount: number;
+  loading: boolean;
+  error: ReturnType<typeof useNearbyBlackSpots>['error'];
+  isFromCache: boolean;
+  isStale: boolean;
+  alertsEnabled: boolean;
+  onRetry: () => void;
+}) {
+  const theme = useTheme();
+  const insets = useSafeAreaInsets();
+
+  const containerStyle = [
+    styles.strip,
+    theme.elevation(2),
+    {
+      backgroundColor: theme.colors.surface,
+      borderRadius: theme.radius.md,
+      marginHorizontal: theme.spacing.lg,
+      marginTop: insets.top + theme.spacing.sm,
+      padding: theme.spacing.md,
+      gap: theme.spacing.xxs,
+    },
+  ];
+
+  if (error !== null && spotCount === 0) {
+    return (
+      <View style={containerStyle}>
+        <ErrorState error={error} title="Could not load black spots" onRetry={onRetry} />
+      </View>
+    );
+  }
+
+  if (loading) {
+    return (
+      <View style={containerStyle} accessibilityRole="summary">
+        <AppText variant="caption" color="textMuted">
+          Loading black spots near you…
+        </AppText>
+      </View>
+    );
+  }
+
+  if (spotCount === 0) {
+    return (
+      <View style={containerStyle}>
+        <EmptyState
+          title="No black spots recorded nearby"
+          description="This does not mean the area is safe — coverage is incomplete. Stay alert."
+        />
+      </View>
+    );
+  }
+
+  return (
+    <View style={containerStyle} accessibilityRole="summary">
+      <AppText variant="caption" color="textMuted">
+        {spotCount === 1 ? '1 black spot nearby' : `${spotCount} black spots nearby`}
+        {alertsEnabled ? '' : ' · alerts are off'}
+      </AppText>
+      {isFromCache ? (
+        <AppText variant="caption" color={isStale ? 'danger' : 'textSubtle'}>
+          {isStale
+            ? 'Showing saved data from over a day ago — you may be offline.'
+            : 'Showing saved data — you may be offline.'}
+        </AppText>
+      ) : null}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  banner: { position: 'absolute', left: 0, right: 0, top: 0 },
+  strip: { position: 'absolute', left: 0, right: 0, top: 0 },
   recentre: { alignItems: 'center', justifyContent: 'center', position: 'absolute' },
 });

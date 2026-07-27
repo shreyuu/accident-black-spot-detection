@@ -18,6 +18,7 @@
     "doctor": "npm run doctor --workspace @accident-black-spot-detection/mobile",
     "emulators": "firebase emulators:start --only auth,firestore,storage",
     "emulators:persist": "firebase emulators:start --only auth,firestore,storage --import=.firebase-data --export-on-exit=.firebase-data",
+    "seed": "node firebase/seed/seedBlackSpots.mjs",
     "lint": "npm run lint --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
