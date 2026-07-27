@@ -4,6 +4,7 @@ export {
   type AppButtonSize,
   type AppButtonVariant,
 } from '@/components/AppButton';
+export { AppCheckbox, type AppCheckboxProps } from '@/components/AppCheckbox';
 export { AppText, type AppTextProps } from '@/components/AppText';
 export { AppTextInput, type AppTextInputProps } from '@/components/AppTextInput';
 export { ConfirmationDialog, type ConfirmationDialogProps } from '@/components/ConfirmationDialog';

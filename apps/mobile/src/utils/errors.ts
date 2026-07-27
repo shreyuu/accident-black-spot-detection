@@ -29,7 +29,12 @@ export class AppError extends Error {
     this.name = 'AppError';
     this.kind = kind;
     this.userMessage = userMessage;
-    this.retryable = (options?.retryable ?? kind === 'network') || kind === 'unavailable';
+    // The parentheses are load-bearing. Written without them this binds as
+    // `(options?.retryable ?? isNetwork) || isUnavailable`, which silently
+    // overrides an explicit `retryable: false` whenever the kind is
+    // 'unavailable' — so a rate-limited user would be offered a "Try again"
+    // button that just hammers the lockout. An explicit value must always win.
+    this.retryable = options?.retryable ?? (kind === 'network' || kind === 'unavailable');
     if (options?.cause !== undefined) {
       this.cause = options.cause;
     }

@@ -1,0 +1,106 @@
+rules_version = '2';
+
+// =============================================================================
+// Firestore security rules
+// =============================================================================
+// Scope: Phase 2 covers the `users` collection only. Collections introduced by
+// later phases (blackSpots, incidentReports, emergencyContacts, alertLogs,
+// adminAuditLogs, …) are added by the phase that creates them, and the complete
+// hardened rule set is reviewed in Phase 12.
+//
+// Default posture is deny-all. A collection is unreachable until a rule below
+// explicitly grants access, so forgetting to write a rule fails closed.
+// =============================================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // -------------------------------------------------------------------------
+    // Helpers
+    // -------------------------------------------------------------------------
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Fields a user is never allowed to set or change on their own profile.
+    // `role` is the important one: without this, any user could make themselves
+    // an admin with a single client-side write and then approve their own
+    // reports. Role changes happen only through the Admin SDK (Phase 7).
+    function hasNoPrivilegedFields(data) {
+      return !data.keys().hasAny(['role']);
+    }
+
+    function isValidProfileShape(data) {
+      return data.keys().hasAll([
+               'id', 'name', 'email', 'role',
+               'alertRadiusM', 'alertsEnabled', 'backgroundMonitoringEnabled',
+               'hapticsEnabled', 'soundEnabled', 'darkModePreference',
+               'createdAt', 'updatedAt'
+             ])
+             && data.id is string
+             && data.name is string
+             && data.name.size() >= 2
+             && data.name.size() <= 80
+             && data.email is string
+             && data.email.size() <= 320
+             // Optional phone: present or absent, but must be a string if set.
+             && (!data.keys().hasAny(['phone']) || data.phone is string)
+             && data.alertRadiusM is int
+             // Mirrors the client-side bounds in src/config/env.ts. Validating
+             // server-side too means a tampered client cannot store a radius
+             // that would make alerting useless or unbearable.
+             && data.alertRadiusM >= 100
+             && data.alertRadiusM <= 2000
+             && data.alertsEnabled is bool
+             && data.backgroundMonitoringEnabled is bool
+             && data.hapticsEnabled is bool
+             && data.soundEnabled is bool
+             && data.darkModePreference in ['system', 'light', 'dark'];
+    }
+
+    // -------------------------------------------------------------------------
+    // users/{userId}
+    // -------------------------------------------------------------------------
+    // A user document is private to its owner. Note there is deliberately no
+    // `list` capability: allowing queries across the collection would expose
+    // the full membership and every registered email address.
+    match /users/{userId} {
+
+      allow get: if isSelf(userId);
+
+      // Registration. The document id must equal the caller's uid, so a user
+      // cannot create a profile for somebody else, and `role` is pinned to
+      // 'user' — self-assignment of a privileged role is rejected outright.
+      allow create: if isSelf(userId)
+                    && isValidProfileShape(request.resource.data)
+                    && request.resource.data.id == userId
+                    && request.resource.data.role == 'user';
+
+      // Preference updates. The immutable fields below are excluded so a client
+      // cannot rewrite its own identity, escalate its role, or backdate
+      // createdAt to fake account age.
+      allow update: if isSelf(userId)
+                    && hasNoPrivilegedFields(request.resource.data.diff(resource.data).affectedKeys())
+                    && !request.resource.data.diff(resource.data).affectedKeys()
+                         .hasAny(['id', 'email', 'createdAt'])
+                    && isValidProfileShape(request.resource.data);
+
+      // Account deletion runs through a Cloud Function in Phase 12 so that the
+      // Auth record, Storage objects and owned documents are removed together.
+      // A client-side delete would orphan all of them.
+      allow delete: if false;
+    }
+
+    // -------------------------------------------------------------------------
+    // Everything else: denied until a phase adds an explicit rule.
+    // -------------------------------------------------------------------------
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

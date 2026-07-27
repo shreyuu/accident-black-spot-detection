@@ -1,16 +1,26 @@
-import { Stack } from 'expo-router';
+import { Redirect, Stack } from 'expo-router';
 
+import { useAuth } from '@/features/auth/AuthProvider';
 import { useTheme } from '@/theme';
 
 /**
  * Authentication route group.
  *
- * TODO(phase-2): redirect away from this group when a session already exists, so
- * a signed-in user cannot land back on the login screen via a deep link or the
- * back stack.
+ * Signed-in users are redirected away. Without this, a deep link or a lingering
+ * back-stack entry could drop an authenticated user onto the login form, where
+ * signing in again is confusing and signing out is not what they asked for.
+ *
+ * `restoring` deliberately falls through to the login screen here rather than
+ * showing a spinner: this group is only reached from the splash gate, which has
+ * already resolved the session, or by explicit navigation.
  */
 export default function AuthLayout() {
   const theme = useTheme();
+  const { status } = useAuth();
+
+  if (status === 'authenticated') {
+    return <Redirect href="/(tabs)/map" />;
+  }
 
   return (
     <Stack

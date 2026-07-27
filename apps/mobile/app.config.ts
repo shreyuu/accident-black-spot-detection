@@ -99,6 +99,10 @@ export default ({ config }: ConfigContext): ExpoConfig => {
 
     plugins: [
       'expo-router',
+      // Required so the Keychain/Keystore entitlements are configured. The auth
+      // session is persisted here rather than in AsyncStorage because it contains
+      // a refresh token — see src/services/firebase/secureAuthStorage.ts.
+      'expo-secure-store',
       [
         'expo-splash-screen',
         {

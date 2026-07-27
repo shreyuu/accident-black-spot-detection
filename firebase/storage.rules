@@ -1,0 +1,20 @@
+rules_version = '2';
+
+// =============================================================================
+// Cloud Storage security rules
+// =============================================================================
+// Phase 2 uploads nothing. Storage is used first in Phase 5 for incident report
+// photographs, so the rules stay closed until then rather than being left open
+// "temporarily" — an open bucket is the single easiest way to leak user data.
+//
+// Phase 5 will add: per-user write paths, content-type allow-listing (images
+// only), and a maximum file size enforced server-side.
+// =============================================================================
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
