@@ -56,9 +56,20 @@ function displayNameFor(variant: AppVariant): string {
   }
 }
 
+/** Trims a build-machine env var to `undefined` when unset or blank. */
+function optionalEnv(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed === undefined || trimmed.length === 0 ? undefined : trimmed;
+}
+
 export default ({ config }: ConfigContext): ExpoConfig => {
   const variant = resolveVariant();
   const identifier = identifierFor(variant);
+
+  // Read here rather than in src/config/env.ts because native map configuration
+  // is generated at build time and cannot consult a runtime value.
+  const googleMapsKeyAndroid = optionalEnv(process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY_ANDROID);
+  const googleMapsKeyIos = optionalEnv(process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY_IOS);
 
   return {
     ...config,
@@ -75,6 +86,19 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     ios: {
       bundleIdentifier: identifier,
       supportsTablet: true,
+      config: {
+        // Only needed for provider={PROVIDER_GOOGLE}. iOS uses Apple Maps by
+        // default, which needs no key — see the note on the plugins array below.
+        ...(googleMapsKeyIos === undefined ? {} : { googleMapsApiKey: googleMapsKeyIos }),
+      },
+      infoPlist: {
+        // The expo-location plugin writes this deprecated iOS 10-era key with its
+        // generic default and offers no option to set it. It is inert at our
+        // deployment target, but a placeholder purpose string should not ship in
+        // a binary, so it is overridden here to match the other two.
+        NSLocationAlwaysUsageDescription:
+          'Accident Black Spot Detection can warn you about nearby accident-prone areas while the app is in the background. This is optional and off by default.',
+      },
     },
 
     android: {
@@ -90,6 +114,19 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       // ScreenContainer for safe-area insets rather than assuming an inset-free
       // viewport.
       predictiveBackGestureEnabled: false,
+      config: {
+        // Android has no non-Google map provider, so a development or release
+        // build needs its own key or the map renders as a blank grid. Expo Go
+        // supplies its own key, which is why the map works there without this.
+        ...(googleMapsKeyAndroid === undefined
+          ? {}
+          : { googleMaps: { apiKey: googleMapsKeyAndroid } }),
+      },
+      // ACCESS_COARSE_LOCATION and ACCESS_FINE_LOCATION are contributed by the
+      // expo-location plugin below; listing them here as well produced duplicate
+      // entries in the merged manifest. ACCESS_BACKGROUND_LOCATION and the
+      // foreground-service permissions arrive in Phase 8, alongside the opt-in
+      // toggle and battery disclosure that must accompany them.
     },
 
     web: {
@@ -103,6 +140,31 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       // session is persisted here rather than in AsyncStorage because it contains
       // a refresh token — see src/services/firebase/secureAuthStorage.ts.
       'expo-secure-store',
+      [
+        'expo-location',
+        {
+          // These strings are what the user actually reads in the OS permission
+          // dialog, so they name the feature rather than saying "for a better
+          // experience". The in-app PermissionCard shown beforehand carries the
+          // fuller explanation, including what is not stored.
+          locationWhenInUsePermission:
+            'Accident Black Spot Detection uses your location to warn you when you approach a known accident-prone or crime-prone area.',
+          // The plugin writes the "Always" Info.plist keys regardless of the
+          // background flags below, defaulting them to the generic
+          // "Allow $(PRODUCT_NAME) to access your location". A vague purpose
+          // string is exactly what App Store review rejects, so it is replaced
+          // here even though Phase 3 never requests Always authorisation.
+          locationAlwaysAndWhenInUsePermission:
+            'Accident Black Spot Detection can warn you about nearby accident-prone areas while the app is in the background. This is optional and off by default.',
+          // Background location is deliberately NOT enabled. Turning it on would
+          // add the background mode to the build before there is any feature
+          // behind it, and before the user has been told about the battery cost.
+          // That arrives in Phase 8.
+          isIosBackgroundLocationEnabled: false,
+          isAndroidBackgroundLocationEnabled: false,
+          isAndroidForegroundServiceEnabled: false,
+        },
+      ],
       [
         'expo-splash-screen',
         {

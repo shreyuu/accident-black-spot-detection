@@ -53,6 +53,16 @@ function RootNavigator() {
         <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen name="(auth)" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        {/*
+          Pushed over the tabs so the map stays in the back stack.
+          `headerBackTitle` is set because iOS otherwise labels the back button
+          with the previous route's name — which for a route group is the raw
+          "(tabs)", leaking an implementation detail into the UI.
+        */}
+        <Stack.Screen
+          name="black-spots/[id]"
+          options={{ title: 'Black spot', headerBackTitle: 'Map' }}
+        />
         <Stack.Screen name="+not-found" options={{ title: 'Not found' }} />
       </Stack>
     </>
