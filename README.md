@@ -14,35 +14,45 @@ alerts, supports incident reporting, and provides emergency SOS assistance.
 
 ## Build status
 
-This project is being built in phases. **Phase 2 of 15 is complete.**
+This project is being built in phases. **Phase 3 of 15 is complete.**
 
-| Phase | Scope                                    | Status         |
-| ----- | ---------------------------------------- | -------------- |
-| 0     | Repository audit and technical plan      | ✅ Complete    |
-| 1     | Expo foundation and design system        | ✅ Complete    |
-| 2     | Firebase and authentication              | ✅ Complete    |
-| 3     | Location permissions and map MVP         | ⬜ Not started |
-| 4     | Black spot database and proximity alerts | ⬜ Not started |
-| 5     | Crowdsourced incident reporting          | ⬜ Not started |
-| 6     | Emergency contacts and SOS               | ⬜ Not started |
-| 7     | Admin dashboard and moderation           | ⬜ Not started |
-| 8     | Background location and notifications    | ⬜ Not started |
-| 9     | Nearby facilities                        | ⬜ Not started |
-| 10    | Spatial clustering, ECLAT, risk scoring  | ⬜ Not started |
-| 11    | Settings, offline support, accessibility | ⬜ Not started |
-| 12    | Security, privacy, abuse prevention      | ⬜ Not started |
-| 13    | Testing and QA                           | ⬜ Not started |
-| 14    | CI/CD, builds, release preparation       | ⬜ Not started |
-| 15    | Documentation and demonstration          | ⬜ Not started |
+| Phase | Scope                                    | Status                    |
+| ----- | ---------------------------------------- | ------------------------- |
+| 0     | Repository audit and technical plan      | ✅ Complete               |
+| 1     | Expo foundation and design system        | ✅ Complete               |
+| 2     | Firebase and authentication              | ✅ Complete               |
+| 3     | Location permissions and map MVP         | ✅ Complete (see caveat†) |
+| 4     | Black spot database and proximity alerts | ⬜ Not started            |
+| 5     | Crowdsourced incident reporting          | ⬜ Not started            |
+| 6     | Emergency contacts and SOS               | ⬜ Not started            |
+| 7     | Admin dashboard and moderation           | ⬜ Not started            |
+| 8     | Background location and notifications    | ⬜ Not started            |
+| 9     | Nearby facilities                        | ⬜ Not started            |
+| 10    | Spatial clustering, ECLAT, risk scoring  | ⬜ Not started            |
+| 11    | Settings, offline support, accessibility | ⬜ Not started            |
+| 12    | Security, privacy, abuse prevention      | ⬜ Not started            |
+| 13    | Testing and QA                           | ⬜ Not started            |
+| 14    | CI/CD, builds, release preparation       | ⬜ Not started            |
+| 15    | Documentation and demonstration          | ⬜ Not started            |
 
 **What works today:** registration, sign-in, sign-out and password reset against the Firebase
 Emulator Suite; a Firestore user profile created on registration and read back into Settings; a
-signed-in session that survives a full app restart; protected tabs that redirect to sign-in when
-signed out; the design system in light and dark themes; startup environment validation; and an error
-boundary around the whole tree.
+signed-in session that survives a full app restart; protected tabs; a location permission flow that
+explains itself before prompting and handles granted / denied / permanently-denied distinctly; a map
+showing your position and three sample black spots with warning-radius circles, tappable to a detail
+sheet and a detail screen; the design system in light and dark themes; startup environment
+validation; and an error boundary around the whole tree.
 
-**What does not work yet:** no map, no location access, no reporting, no SOS, and no black spot
-data. Those screens exist as labelled placeholders.
+**What does not work yet:** no real black spot data, no proximity warnings, no reporting and no SOS.
+Those screens exist as labelled placeholders.
+
+> **† Android map tiles need your own Google Maps API key.** The map screen — permission flow,
+> location acquisition, and the rest of the app — works on Android, but the map _tiles_ render as a
+> blank grid. Verified on a Pixel 9 emulator: Expo Go ships a Google Maps key, but it fails with
+> `Google Maps Android API: Authorization failure … StatusCode=INVALID_ARGUMENT`. iOS is unaffected
+> because it uses Apple Maps, which needs no key. To fix, set
+> `EXPO_PUBLIC_GOOGLE_MAPS_API_KEY_ANDROID` in `apps/mobile/.env` — it is already wired through
+> `app.config.ts`.
 
 See [`docs/phase-0-audit.md`](docs/phase-0-audit.md) for the full plan and
 [`docs/adr/0001-platform-and-stack.md`](docs/adr/0001-platform-and-stack.md) for the technology
@@ -65,23 +75,26 @@ service arrive in later phases.
 ```
 accident-black-spot-detection/
 ├── apps/
-│   └── mobile/              # Expo app (Phases 1–6, 8, 9, 11)
-│       ├── app/             # Expo Router routes, file-based
+│   └── mobile/               # Expo app (Phases 1–6, 8, 9, 11)
+│       ├── app/              # Expo Router routes, file-based
 │       ├── src/
-│       │   ├── components/  # Reusable UI, no data access
-│       │   ├── config/      # Validated environment configuration
-│       │   ├── constants/   # Safety disclaimers and app constants
-│       │   ├── providers/   # App-wide React providers
-│       │   ├── theme/       # Design tokens, light/dark themes
-│       │   ├── types/       # Shared domain types
-│       │   └── utils/       # Logger, error normalisation
-│       └── assets/          # Placeholder icons (real branding: Phase 14)
-└── docs/                    # Audit, ADRs, and design documentation
+│       │   ├── components/   # Reusable UI, no data access
+│       │   ├── config/       # Validated environment configuration
+│       │   ├── constants/    # Safety disclaimers and app constants
+│       │   ├── features/     # auth, location, black-spots
+│       │   ├── providers/    # App-wide React providers
+│       │   ├── services/     # Firebase init and repositories
+│       │   ├── theme/        # Design tokens, light/dark themes
+│       │   ├── types/        # Shared domain types
+│       │   └── utils/        # Geo maths, logger, error normalisation
+│       ├── types/            # Local ambient declarations
+│       └── assets/           # Placeholder icons (real branding: Phase 14)
+├── firebase/                 # Security rules and emulator configuration
+└── docs/                     # Audit, ADRs, and design documentation
 ```
 
 Directories from the target architecture that do not exist yet — `apps/admin/`,
-`services/analytics/`, `firebase/`, `packages/shared-types/` — are created by the phase that needs
-them.
+`services/analytics/`, `packages/shared-types/` — are created by the phase that needs them.
 
 ---
 
@@ -221,7 +234,14 @@ npm run format
 
 ## Known limitations
 
-- **Feature work is incomplete by design.** Only Phases 0–2 are done; see the table above.
+- **Feature work is incomplete by design.** Only Phases 0–3 are done; see the table above.
+- **Android map tiles require your own Google Maps Platform key** — see the note in Build status.
+  Everything else on Android works; only the tiles and map overlays are affected.
+- **Black spots on the map are synthetic.** Three samples are projected around your current position
+  so the map is reviewable anywhere. They are labelled as sample data in the UI and are replaced by
+  approved Firestore records in Phase 4.
+- **Location is read on demand, not continuously.** There is no background tracking and no location
+  history; both arrive, opt-in, in Phase 8.
 - **Emulators only so far.** Authentication and Firestore have been exercised against the local
   Emulator Suite, not a real Firebase project. Pointing at production is a config change
   (`.env`), but that path has not been tested.
