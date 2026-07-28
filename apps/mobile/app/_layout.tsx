@@ -63,6 +63,10 @@ function RootNavigator() {
           name="black-spots/[id]"
           options={{ title: 'Black spot', headerBackTitle: 'Map' }}
         />
+        <Stack.Screen
+          name="reports/index"
+          options={{ title: 'My reports', headerBackTitle: 'Report' }}
+        />
         <Stack.Screen name="+not-found" options={{ title: 'Not found' }} />
       </Stack>
     </>

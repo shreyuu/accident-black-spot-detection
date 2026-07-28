@@ -13,6 +13,8 @@ export { EmptyState, type EmptyStateProps } from '@/components/EmptyState';
 export { ErrorBoundary } from '@/components/ErrorBoundary';
 export { ErrorState, type ErrorStateProps } from '@/components/ErrorState';
 export { LoadingIndicator, type LoadingIndicatorProps } from '@/components/LoadingIndicator';
+export { OptionGroup, type OptionGroupItem, type OptionGroupProps } from '@/components/OptionGroup';
 export { PermissionCard, type PermissionCardProps } from '@/components/PermissionCard';
+export { ProgressBar, type ProgressBarProps } from '@/components/ProgressBar';
 export { RiskBadge, type RiskBadgeProps } from '@/components/RiskBadge';
 export { ScreenContainer, type ScreenContainerProps } from '@/components/ScreenContainer';

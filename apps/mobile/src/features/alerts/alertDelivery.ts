@@ -1,5 +1,4 @@
 import * as Haptics from 'expo-haptics';
-import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
 import type { ProximityAlert } from '@/features/alerts/proximityEngine';
@@ -16,7 +15,51 @@ import { logger } from '@/utils/logger';
  * without a haptic motor, must never stop the in-app banner from appearing. The
  * banner is the one channel that always works, which is why it is the caller's
  * responsibility rather than this module's.
+ *
+ * ## Why `expo-notifications` is loaded lazily
+ *
+ * A static `import * as Notifications from 'expo-notifications'` **throws at
+ * import time** in Expo Go on Android, which since SDK 53 refuses to provide the
+ * module at all. Because this file is reached from the map screen, that turned
+ * into a cascade: the route failed to load, `(tabs)/_layout` then crashed with
+ * "Cannot read property 'ErrorBoundary' of undefined", and the entire tab group
+ * — map, report, SOS, settings — was unreachable on Android. On iOS the same
+ * import only logs a warning, which is why it went unnoticed.
+ *
+ * The module already treats every notification failure as survivable; it simply
+ * could not survive its own import. Loading it lazily keeps that contract intact
+ * on every platform: if it cannot be loaded, notifications are skipped and the
+ * in-app banner and haptics carry on.
+ *
+ * TODO(phase-8): the development build introduced there supplies the module
+ * properly, at which point this can go back to a static import — but only if the
+ * app never runs under Expo Go again.
  */
+
+type NotificationsModule = typeof import('expo-notifications');
+
+/** `undefined` = not tried yet, `null` = tried and unavailable. */
+let notificationsModule: NotificationsModule | null | undefined;
+
+function loadNotifications(): NotificationsModule | null {
+  if (notificationsModule !== undefined) {
+    return notificationsModule;
+  }
+
+  try {
+    // A runtime `require` is the point: a static import cannot be caught, and
+    // catching it is the whole reason this function exists.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- see the module note above
+    notificationsModule = require('expo-notifications') as NotificationsModule;
+  } catch (error) {
+    logger.warn('alertDelivery', 'Notifications are unavailable; using the in-app banner only', {
+      error: error instanceof Error ? error.message : 'unknown',
+    });
+    notificationsModule = null;
+  }
+
+  return notificationsModule;
+}
 
 export interface AlertPreferences {
   alertsEnabled: boolean;
@@ -39,6 +82,12 @@ export async function configureNotifications(): Promise<void> {
   if (notificationsConfigured) {
     return;
   }
+
+  const Notifications = loadNotifications();
+  if (Notifications === null) {
+    return;
+  }
+
   notificationsConfigured = true;
 
   Notifications.setNotificationHandler({
@@ -78,6 +127,11 @@ export async function configureNotifications(): Promise<void> {
  * still works — so callers should carry on regardless.
  */
 export async function ensureNotificationPermission(): Promise<boolean> {
+  const Notifications = loadNotifications();
+  if (Notifications === null) {
+    return false;
+  }
+
   try {
     const existing = await Notifications.getPermissionsAsync();
     if (existing.granted) {
@@ -117,6 +171,11 @@ export async function deliverAlert(
 }
 
 async function presentNotification(alert: ProximityAlert, soundEnabled: boolean): Promise<void> {
+  const Notifications = loadNotifications();
+  if (Notifications === null) {
+    return;
+  }
+
   try {
     await configureNotifications();
 
@@ -153,7 +212,8 @@ async function triggerHaptics(hapticsEnabled: boolean): Promise<void> {
   }
 }
 
-/** Test-only reset of the one-shot configuration guard. */
+/** Test-only reset of the one-shot configuration and module-load guards. */
 export function __resetAlertDeliveryForTests(): void {
   notificationsConfigured = false;
+  notificationsModule = undefined;
 }
