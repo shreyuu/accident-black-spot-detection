@@ -194,10 +194,29 @@ export function getFirebaseFirestore(): Firestore {
   return cachedFirestore;
 }
 
+/**
+ * How long a Storage upload may keep retrying before it fails, in milliseconds.
+ *
+ * The SDK's own defaults did not bound this in practice. Verified on the iOS
+ * simulator with the emulator stopped: an upload sat at 0% with the submit
+ * button spinning for over eight minutes and never surfaced an error, so the
+ * user had no way to retry, no way to cancel, and nothing to tell them anything
+ * was wrong. Report photographs are attached at the roadside on whatever signal
+ * exists, so a bounded, reportable failure is far more useful than an
+ * indefinitely optimistic one — the same reasoning as the fix timeout in
+ * locationService.
+ */
+const STORAGE_UPLOAD_RETRY_MS = 45_000;
+const STORAGE_OPERATION_RETRY_MS = 20_000;
+
 export function getFirebaseStorage(): FirebaseStorage {
   if (cachedStorage === null) {
     cachedStorage = getStorage(getFirebaseApp());
     const storage = cachedStorage;
+    storage.maxUploadRetryTime = STORAGE_UPLOAD_RETRY_MS;
+    // Covers getDownloadURL and metadata reads, which otherwise hang just as
+    // long as an upload does.
+    storage.maxOperationRetryTime = STORAGE_OPERATION_RETRY_MS;
     connectEmulator('storage', () => {
       connectStorageEmulator(storage, resolveEmulatorHost(), EMULATOR_PORTS.storage);
     });

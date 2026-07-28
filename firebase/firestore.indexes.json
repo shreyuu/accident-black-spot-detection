@@ -11,6 +11,24 @@
       ]
     },
     {
+      "//": "The My Reports screen: a user's own reports, newest first. The equality field precedes the ordered field, which is what Firestore requires; without this the query fails at runtime with a FAILED_PRECONDITION.",
+      "collectionGroup": "incidentReports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "reporterId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "//": "Moderation queue (Phase 7): pending reports oldest first, so the longest-waiting report is reviewed next.",
+      "collectionGroup": "incidentReports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "ASCENDING" }
+      ]
+    },
+    {
       "//": "A user reading back their own alert history, newest first (Phase 11 / 13).",
       "collectionGroup": "alertLogs",
       "queryScope": "COLLECTION",

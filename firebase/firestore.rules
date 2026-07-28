@@ -122,6 +122,103 @@ service cloud.firestore {
     }
 
     // -------------------------------------------------------------------------
+    // incidentReports/{reportId}
+    // -------------------------------------------------------------------------
+    // Crowdsourced reports. This is the collection where a mistake would be most
+    // damaging: an unmoderated report that reached other users as an official
+    // warning would be exactly the failure the whole approval flow exists to
+    // prevent.
+    //
+    // Three properties do that work, and none of them depends on the client
+    // behaving:
+    //
+    //   1. `status` may only ever be created as 'pending'. Not "should be" — the
+    //      rule refuses any other value, so a tampered client that asks for
+    //      'approved' has its write rejected outright rather than published.
+    //   2. `moderationNotes`, `reviewedBy`, `reviewedAt` and `verified` may not
+    //      be present on a client write at all. They are set by a moderator
+    //      through the Admin SDK in Phase 7, which bypasses these rules.
+    //   3. No client update path exists, so a report cannot be edited into a
+    //      different status after the fact — see the note on `update` below.
+    //
+    // Note also what is NOT here: nothing in this collection is readable by
+    // anyone but its author. Reports are not a public feed, approved or not.
+    // Publication happens by an administrator creating a `blackSpots` document,
+    // which is a separate, deliberate act.
+
+    // Fields no client may ever write, in any operation.
+    function hasNoModerationFields(data) {
+      return !data.keys().hasAny(['verified', 'moderationNotes', 'reviewedBy', 'reviewedAt']);
+    }
+
+    function isValidReportShape(data) {
+      return data.keys().hasAll([
+               'reporterId', 'type', 'description', 'latitude', 'longitude',
+               'geohash', 'severity', 'imageUrls', 'status',
+               'createdAt', 'updatedAt'
+             ])
+             // Only the listed keys, plus the one optional field. An unexpected
+             // key means the client and these rules disagree about the model,
+             // and the safe response to that is refusal.
+             && data.keys().hasOnly([
+                  'reporterId', 'type', 'description', 'latitude', 'longitude',
+                  'geohash', 'severity', 'imageUrls', 'status', 'occurredAt',
+                  'createdAt', 'updatedAt'
+                ])
+             && data.type in ['accident', 'crime', 'pothole', 'unsafe-road', 'other']
+             && data.severity in ['low', 'medium', 'high']
+             && data.description is string
+             // Mirrors DESCRIPTION_MIN_LENGTH / DESCRIPTION_MAX_LENGTH in
+             // src/features/reports/reportSchemas.ts. Both copies exist on
+             // purpose; only this one is a control.
+             && data.description.size() >= 20
+             && data.description.size() <= 1000
+             && data.latitude is number
+             && data.latitude >= -90 && data.latitude <= 90
+             && data.longitude is number
+             && data.longitude >= -180 && data.longitude <= 180
+             && data.geohash is string
+             && data.geohash.size() >= 1
+             && data.geohash.size() <= 22
+             && data.imageUrls is list
+             // Mirrors MAX_IMAGES_PER_REPORT.
+             && data.imageUrls.size() <= 3
+             && (!data.keys().hasAny(['occurredAt']) || data.occurredAt is timestamp);
+    }
+
+    match /incidentReports/{reportId} {
+
+      // A reporter reads only their own. There is no rule granting moderators
+      // access here: the admin dashboard uses the Admin SDK, so widening this
+      // for a client-side "moderator" role would add reach without adding a
+      // capability anyone needs.
+      allow get, list: if isSignedIn() && resource.data.reporterId == request.auth.uid;
+
+      allow create: if isSignedIn()
+                    && request.resource.data.reporterId == request.auth.uid
+                    && isValidReportShape(request.resource.data)
+                    && hasNoModerationFields(request.resource.data)
+                    // The load-bearing line. Nothing a client submits is
+                    // anything other than pending.
+                    && request.resource.data.status == 'pending';
+
+      // Deliberately closed. There is no feature that edits a submitted report,
+      // and every field a user might want to change is one a moderator has
+      // already read — silently rewriting the description under a review, or
+      // flipping status after approval, are both worse than making the user file
+      // a new report.
+      //
+      // TODO(phase-12): if withdrawing a pending report is added, it belongs
+      // here as a narrow rule allowing the author to change status from
+      // 'pending' to a 'withdrawn' state only, never to 'approved'.
+      allow update: if false;
+
+      // Deletion would destroy the evidence trail behind a published black spot.
+      // Account deletion cascades through a Cloud Function in Phase 12.
+      allow delete: if false;
+    }
+
+    // -------------------------------------------------------------------------
     // alertLogs/{alertId}
     // -------------------------------------------------------------------------
     // Append-only, private to the user who was alerted.

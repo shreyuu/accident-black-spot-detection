@@ -166,6 +166,25 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         },
       ],
       [
+        'expo-image-picker',
+        {
+          // Shown in the OS dialogs when a reporter attaches a photograph. Both
+          // name the feature rather than saying "to improve your experience" —
+          // a vague purpose string is both a review rejection and a reason for
+          // the user to refuse.
+          photosPermission:
+            'Accident Black Spot Detection needs access to your photos so you can attach one to an incident report. Photos are only uploaded with a report you submit.',
+          cameraPermission:
+            'Accident Black Spot Detection needs access to your camera so you can photograph an incident you are reporting. Photos are only uploaded with a report you submit.',
+          // The app never saves to the library, so the write-only permission is
+          // not requested at all.
+          microphonePermission: false,
+        },
+      ],
+      // Contributes the Android manifest bits the date/time dialogs need. The
+      // package has no configurable options.
+      '@react-native-community/datetimepicker',
+      [
         'expo-splash-screen',
         {
           backgroundColor: '#0B1F3A',

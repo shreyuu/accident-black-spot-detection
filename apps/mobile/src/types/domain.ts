@@ -5,7 +5,6 @@
  * with their Zod schemas and Firestore converters, so runtime validation and
  * types always arrive as a pair.
  *
- * TODO(phase-5): add IncidentReport.
  * TODO(phase-6): add EmergencyContact.
  */
 
@@ -143,6 +142,73 @@ export interface NearbyBlackSpot {
   spot: BlackSpot;
   /** Great-circle distance from the user, in metres. */
   distanceM: number;
+}
+
+// -----------------------------------------------------------------------------
+// Incident report
+// -----------------------------------------------------------------------------
+
+/** What the reporter says happened. Drives moderation routing in Phase 7. */
+export const INCIDENT_TYPES = ['accident', 'crime', 'pothole', 'unsafe-road', 'other'] as const;
+export type IncidentType = (typeof INCIDENT_TYPES)[number];
+
+/**
+ * Reporter-assessed severity.
+ *
+ * Deliberately a three-point scale, not the four-point `RiskLevel` used for
+ * published black spots. A member of the public is judging one event they
+ * witnessed; a black spot's risk level is a moderated, aggregated judgement.
+ * Keeping the vocabularies separate stops a self-reported "critical" from ever
+ * reading as an official critical-risk classification.
+ */
+export const INCIDENT_SEVERITIES = ['low', 'medium', 'high'] as const;
+export type IncidentSeverity = (typeof INCIDENT_SEVERITIES)[number];
+
+/**
+ * Moderation state of a report.
+ *
+ * A client may only ever cause `pending`. `approved` and `rejected` are set by a
+ * moderator through the Admin SDK in Phase 7, and Firestore rules refuse any
+ * client write to the field — that is what stops the reporting flow from
+ * becoming a way to publish unverified warnings.
+ *
+ * TODO(phase-11): `draft` is part of the agreed model but nothing writes it yet;
+ * local drafts for reports composed offline are Phase 11 work.
+ */
+export const REPORT_STATUSES = ['draft', 'pending', 'approved', 'rejected'] as const;
+export type ReportStatus = (typeof REPORT_STATUSES)[number];
+
+/**
+ * A crowdsourced report at `incidentReports/{id}`.
+ *
+ * An approved report is evidence *towards* a black spot, never a black spot
+ * itself: nothing in this app promotes a report automatically. Approval is a
+ * human decision, and publishing the resulting black spot is a second, separate
+ * one (Phase 7), with the clustering that proposes candidates arriving in
+ * Phase 10.
+ */
+export interface IncidentReport {
+  id: string;
+  /** Firebase Auth uid of the reporter. Pinned to the caller by the rules. */
+  reporterId: string;
+  type: IncidentType;
+  description: string;
+  latitude: number;
+  longitude: number;
+  /** Geohash of the coordinates, so Phase 10 can cluster without a full scan. */
+  geohash: string;
+  severity: IncidentSeverity;
+  /** When the incident happened, if the reporter said. Not the submission time. */
+  occurredAt?: Timestamp | null;
+  /** Firebase Storage download URLs. Empty when no photograph was attached. */
+  imageUrls: string[];
+  status: ReportStatus;
+  /** Moderator's explanation, shown to the reporter. Set server-side only. */
+  moderationNotes?: string;
+  reviewedBy?: string;
+  reviewedAt?: Timestamp | null;
+  createdAt: Timestamp | null;
+  updatedAt: Timestamp | null;
 }
 
 // -----------------------------------------------------------------------------

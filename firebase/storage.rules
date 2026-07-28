@@ -3,16 +3,98 @@ rules_version = '2';
 // =============================================================================
 // Cloud Storage security rules
 // =============================================================================
-// Phase 2 uploads nothing. Storage is used first in Phase 5 for incident report
-// photographs, so the rules stay closed until then rather than being left open
-// "temporarily" — an open bucket is the single easiest way to leak user data.
+// Phase 5 introduces the only upload in the app: photographs attached to an
+// incident report.
 //
-// Phase 5 will add: per-user write paths, content-type allow-listing (images
-// only), and a maximum file size enforced server-side.
+// The default is still deny-all. A path is unreachable unless a rule below
+// grants it, so a future feature that forgets to add one fails closed.
+//
+// Three things are enforced here and NOT trusted to the client, because the
+// client-side copies in src/features/reports/ can be bypassed entirely by anyone
+// willing to drive the SDK themselves:
+//
+//   1. Where a user may write — their own uid-scoped prefix, and nowhere else.
+//   2. What may be written — images only, from an allow-list of content types.
+//   3. How large — a hard size cap, so the bucket cannot be used as free storage
+//      or filled to exhaust the project's quota.
 // =============================================================================
 
 service firebase.storage {
   match /b/{bucket}/o {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Mirrors MAX_IMAGE_BYTES in src/features/reports/reportSchemas.ts.
+    function isWithinSizeLimit() {
+      return request.resource.size <= 5 * 1024 * 1024;
+    }
+
+    // An allow-list, not `image/*`. A wildcard would admit SVG, which is an
+    // executable document format: a moderator opening one in a browser-based
+    // dashboard would run whatever script it contained.
+    function isAllowedImage() {
+      return request.resource.contentType in [
+        'image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'
+      ];
+    }
+
+    // -------------------------------------------------------------------------
+    // incidentReports/{userId}/{fileName}
+    // -------------------------------------------------------------------------
+    // The uid is a path segment, so ownership is structural — comparing it to
+    // request.auth.uid needs no lookup, and there is no way to write into
+    // another user's prefix.
+    //
+    // Images are uploaded before the report document is created, which is why
+    // the path cannot be keyed by report id. See the note in
+    // src/features/reports/reportStorage.ts for why that ordering was chosen.
+    match /incidentReports/{userId}/{fileName} {
+
+      // Read is limited to the owner. Moderators reach these objects through the
+      // Admin SDK in Phase 7, which bypasses these rules — so there is no need
+      // to widen this, and widening it would make every report photograph
+      // readable by every signed-in account.
+      //
+      // Note that a download URL produced by getDownloadURL() carries a token
+      // that grants access without re-evaluating these rules. That is Firebase
+      // behaviour, not something configured here: treat any such URL stored in a
+      // report document as a capability, and never expose it beyond moderation.
+      allow read: if isSignedIn() && request.auth.uid == userId;
+
+      allow create: if isSignedIn()
+                    && request.auth.uid == userId
+                    && isAllowedImage()
+                    && isWithinSizeLimit()
+                    // Refuses an upload onto a path that already holds an
+                    // object. `allow update: if false` below is NOT sufficient
+                    // on its own: verified against the emulator, re-uploading to
+                    // an existing path is evaluated as `create`, not `update`,
+                    // so without this line the write succeeds. Object names are
+                    // random and single-use, so an overwrite can only mean an
+                    // attempt to swap the evidence behind a report a moderator
+                    // may already have read.
+                    && resource == null;
+
+      // Kept explicit even though the emulator routes overwrites through
+      // `create`. Metadata-only updates land here, and there is no reason for a
+      // client to change an uploaded object's content type or cache headers
+      // after the fact.
+      allow update: if false;
+
+      // Client-side deletion is refused for the same reason the report document
+      // cannot be deleted: it would break the evidence trail behind a published
+      // warning.
+      // TODO(phase-12): a scheduled Cloud Function sweeps objects that no report
+      // references — abandoned uploads — and cascades deletion when an account
+      // is removed.
+      allow delete: if false;
+    }
+
+    // -------------------------------------------------------------------------
+    // Everything else: denied until a phase adds an explicit rule.
+    // -------------------------------------------------------------------------
     match /{allPaths=**} {
       allow read, write: if false;
     }

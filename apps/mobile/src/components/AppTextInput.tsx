@@ -12,6 +12,14 @@ export interface AppTextInputProps extends Omit<TextInputProps, 'style'> {
   hint?: string;
   /** Appends a visible "(optional)" marker. Required is the assumed default. */
   optional?: boolean;
+  /**
+   * Minimum height in points, for multiline fields.
+   *
+   * `numberOfLines` does not size a `multiline` TextInput on iOS, so a free-text
+   * field would otherwise render one line tall and give no visual cue that a
+   * longer answer is wanted — which matters where the copy asks for detail.
+   */
+  minHeight?: number;
 }
 
 /**
@@ -27,7 +35,7 @@ export interface AppTextInputProps extends Omit<TextInputProps, 'style'> {
  *     than as an unrelated string somewhere on screen.
  */
 export const AppTextInput = forwardRef<TextInput, AppTextInputProps>(function AppTextInput(
-  { label, error, hint, optional = false, ...rest },
+  { label, error, hint, optional = false, minHeight, ...rest },
   ref,
 ) {
   const theme = useTheme();
@@ -69,7 +77,7 @@ export const AppTextInput = forwardRef<TextInput, AppTextInputProps>(function Ap
             borderColor,
             borderRadius: theme.radius.md,
             color: theme.colors.text,
-            minHeight: theme.minTouchTarget,
+            minHeight: minHeight ?? theme.minTouchTarget,
             paddingHorizontal: theme.spacing.md,
           },
         ]}

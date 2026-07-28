@@ -14,7 +14,7 @@ alerts, supports incident reporting, and provides emergency SOS assistance.
 
 ## Build status
 
-This project is being built in phases. **Phase 4 of 15 is complete.**
+This project is being built in phases. **Phase 5 of 15 is complete.**
 
 | Phase | Scope                                    | Status                    |
 | ----- | ---------------------------------------- | ------------------------- |
@@ -23,7 +23,7 @@ This project is being built in phases. **Phase 4 of 15 is complete.**
 | 2     | Firebase and authentication              | ✅ Complete               |
 | 3     | Location permissions and map MVP         | ✅ Complete (see caveat†) |
 | 4     | Black spot database and proximity alerts | ✅ Complete               |
-| 5     | Crowdsourced incident reporting          | ⬜ Not started            |
+| 5     | Crowdsourced incident reporting          | ✅ Complete               |
 | 6     | Emergency contacts and SOS               | ⬜ Not started            |
 | 7     | Admin dashboard and moderation           | ⬜ Not started            |
 | 8     | Background location and notifications    | ⬜ Not started            |
@@ -44,7 +44,15 @@ inside, hysteresis and a cooldown before another can fire, overlapping zones com
 warning, delivered as an in-app banner plus a local notification and haptics. Warnings work offline
 from a saved copy, clearly labelled as such.
 
-**What does not work yet:** no incident reporting, no SOS, no background monitoring. Those screens
+**Incident reporting also works end to end**: a signed-in user picks an incident type and severity,
+writes a description, adjusts the location pin, optionally says when it happened and attaches up to
+three photographs from the camera or library. Photographs upload to Cloud Storage with a progress
+bar, the report is stored with status `pending`, and "My reports" shows where each one stands with
+the moderator's note where there is one. A report is **never** turned into a black spot
+automatically — approval is a human decision, and publishing a black spot from it is a second,
+separate one.
+
+**What does not work yet:** no SOS, no moderation dashboard, no background monitoring. Those screens
 exist as labelled placeholders.
 
 > **† Android map tiles need your own Google Maps API key.** The map screen — permission flow,
@@ -82,7 +90,7 @@ accident-black-spot-detection/
 │       │   ├── components/   # Reusable UI, no data access
 │       │   ├── config/       # Validated environment configuration
 │       │   ├── constants/    # Safety disclaimers and app constants
-│       │   ├── features/     # auth, location, black-spots
+│       │   ├── features/     # auth, location, black-spots, alerts, reports
 │       │   ├── providers/    # App-wide React providers
 │       │   ├── services/     # Firebase init and repositories
 │       │   ├── theme/        # Design tokens, light/dark themes
@@ -246,7 +254,16 @@ npm run format
 
 ## Known limitations
 
-- **Feature work is incomplete by design.** Only Phases 0–3 are done; see the table above.
+- **Feature work is incomplete by design.** Only Phases 0–5 are done; see the table above.
+- **There is no moderation interface yet.** Reports are submitted and stored as `pending`, but
+  nothing can approve them until the admin dashboard arrives in Phase 7. Approving a report during
+  Phase 5 testing means writing to the emulator through its admin API by hand.
+- **Report photographs can be orphaned.** Images upload before the report document is written, so
+  abandoning the form after choosing a photo leaves an unreferenced object in the bucket. That
+  ordering is deliberate — a report must never reference photographs that never arrived — and a
+  cleanup function is Phase 12 work.
+- **A submitted report cannot be edited or withdrawn.** The Firestore rules refuse every client
+  update and delete, so there is no way to change a report after sending it.
 - **Android map tiles require your own Google Maps Platform key** — see the note in Build status.
   Everything else on Android works; only the tiles and map overlays are affected.
 - **Proximity checking is foreground only.** The position stream stops when the app is backgrounded.
