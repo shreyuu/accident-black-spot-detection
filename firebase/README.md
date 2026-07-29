@@ -55,7 +55,7 @@ missing rule fails closed rather than open.
 | `alertLogs`                            | Phase 4  | ✅ Implemented |
 | `incidentReports`                      | Phase 5  | ✅ Implemented |
 | Storage `incidentReports/{uid}/{file}` | Phase 5  | ✅ Implemented |
-| `emergencyContacts`                    | Phase 6  | ⬜ Denied      |
+| `emergencyContacts`                    | Phase 6  | ✅ Implemented |
 | `adminAuditLogs`                       | Phase 7  | ⬜ Denied      |
 | Storage (everything else)              | —        | ⬜ Denied      |
 
@@ -91,6 +91,21 @@ the automated equivalent is Phase 7 work.
   publication means an administrator creating a `blackSpots` document, which is a separate act.
 - The document shape is validated server-side with `hasOnly`, so an unexpected field is refused
   rather than stored.
+
+### Emergency contacts (Phase 6)
+
+- **No read path exists for anyone but the owner** — not for moderators, not for admins, not for any
+  future feature. A contact list is not moderation evidence, and every document is a real person's
+  name and number held by somebody else who never agreed to be there.
+- Full CRUD is granted to the owner, unlike incident reports. A wrong number the user cannot correct
+  is worse than useless in an emergency, so edit and delete are first-class rather than routed
+  through a Cloud Function.
+- `userId` and `createdAt` are immutable, so a contact cannot be reassigned to another account.
+- The shape is validated with `hasOnly`, so an unexpected field — a notes box, an address — is
+  refused rather than quietly stored.
+- Note there is **no server-side cap** on the number of contacts. Firestore rules cannot count
+  documents without a read per evaluation, so the limit of 5 is a client-side usability guard and is
+  documented as such in `contactSchemas.ts` rather than pretended to be a security control.
 
 ### Storage (Phase 5)
 

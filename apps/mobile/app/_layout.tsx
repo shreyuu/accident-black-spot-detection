@@ -67,6 +67,10 @@ function RootNavigator() {
           name="reports/index"
           options={{ title: 'My reports', headerBackTitle: 'Report' }}
         />
+        <Stack.Screen
+          name="emergency-contacts/index"
+          options={{ title: 'Emergency contacts', headerBackTitle: 'Back' }}
+        />
         <Stack.Screen name="+not-found" options={{ title: 'Not found' }} />
       </Stack>
     </>

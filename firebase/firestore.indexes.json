@@ -29,6 +29,15 @@
       ]
     },
     {
+      "//": "A user's own emergency contacts, alphabetical. The equality field precedes the ordered field, which is what Firestore requires; without this the query fails at runtime with a FAILED_PRECONDITION.",
+      "collectionGroup": "emergencyContacts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "name", "order": "ASCENDING" }
+      ]
+    },
+    {
       "//": "A user reading back their own alert history, newest first (Phase 11 / 13).",
       "collectionGroup": "alertLogs",
       "queryScope": "COLLECTION",

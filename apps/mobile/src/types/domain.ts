@@ -5,7 +5,6 @@
  * with their Zod schemas and Firestore converters, so runtime validation and
  * types always arrive as a pair.
  *
- * TODO(phase-6): add EmergencyContact.
  */
 
 import type { Timestamp } from 'firebase/firestore';
@@ -210,6 +209,53 @@ export interface IncidentReport {
   createdAt: Timestamp | null;
   updatedAt: Timestamp | null;
 }
+
+// -----------------------------------------------------------------------------
+// Emergency contact
+// -----------------------------------------------------------------------------
+
+/**
+ * Someone the user has chosen to notify with an SOS, at
+ * `emergencyContacts/{id}`.
+ *
+ * This is the most sensitive collection in the app: it is a list of real people
+ * with real phone numbers, and they never consented to being here. It is
+ * therefore deliberately minimal — a name, a number, and an optional label so
+ * the user can tell two "Mum"s apart — and readable only by its owner. No email,
+ * no address, no notes field that would invite storing more.
+ *
+ * Nothing is ever sent to these contacts automatically. The phone number is
+ * handed to the device's own SMS composer, which the user must then send
+ * themselves; this app has no server-side messaging and never will without a
+ * separate, explicit decision.
+ */
+export interface EmergencyContact {
+  id: string;
+  /** Owner's Firebase Auth uid. Pinned by the security rules. */
+  userId: string;
+  name: string;
+  /** Stored as the user typed it, minus separators. Never normalised to E.164. */
+  phone: string;
+  /** Free-text label such as "Sister" or "Neighbour". Optional. */
+  relationship?: string;
+  /**
+   * Pre-selected when the SOS screen opens.
+   *
+   * At most one contact should carry this. It is enforced by the repository
+   * writing the change in a batch rather than by the rules, because Firestore
+   * rules cannot see other documents cheaply enough to make it a hard guarantee
+   * — so the SOS screen also tolerates several, or none.
+   */
+  isPrimary: boolean;
+  createdAt: Timestamp | null;
+  updatedAt: Timestamp | null;
+}
+
+/** Fields the user supplies. The rest is derived or server-set. */
+export type EmergencyContactInput = Pick<
+  EmergencyContact,
+  'name' | 'phone' | 'relationship' | 'isPrimary'
+>;
 
 // -----------------------------------------------------------------------------
 // Alert log

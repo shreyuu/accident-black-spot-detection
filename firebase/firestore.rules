@@ -219,6 +219,74 @@ service cloud.firestore {
     }
 
     // -------------------------------------------------------------------------
+    // emergencyContacts/{contactId}
+    // -------------------------------------------------------------------------
+    // The most sensitive collection in the app. Every document is a real
+    // person's name and phone number, held by someone else, and that person
+    // never agreed to be here.
+    //
+    // Two consequences shape these rules:
+    //
+    //   1. **There is no read path for anyone but the owner** — not for
+    //      moderators, not for admins, not for any future feature. A contact
+    //      list is not moderation evidence and there is no legitimate reason for
+    //      a second party to enumerate it.
+    //   2. **Full CRUD is granted to the owner**, unlike incident reports. This
+    //      is the user's own data about people they chose, and a wrong number
+    //      they cannot correct is worse than useless in an emergency — so edit
+    //      and delete are first-class, not routed through a Cloud Function.
+    //
+    // Note there is no cap on the number of contacts here. Firestore rules
+    // cannot count documents in a collection without a read per evaluation, so
+    // the limit is a client-side usability guard and is documented as such in
+    // contactSchemas.ts rather than pretended to be a security control.
+
+    function isValidContactShape(data) {
+      return data.keys().hasAll(['userId', 'name', 'phone', 'isPrimary', 'createdAt', 'updatedAt'])
+             // Only the listed keys, plus the one optional label. An unexpected
+             // field means the client and these rules disagree about the model,
+             // and refusal is the safe response.
+             && data.keys().hasOnly([
+                  'userId', 'name', 'phone', 'relationship', 'isPrimary',
+                  'createdAt', 'updatedAt'
+                ])
+             && data.name is string
+             // Mirrors CONTACT_NAME_MIN_LENGTH / CONTACT_NAME_MAX_LENGTH.
+             && data.name.size() >= 2
+             && data.name.size() <= 60
+             && data.phone is string
+             && data.phone.size() >= 1
+             // Comfortably above E.164's 15 digits plus a leading '+'; bounded so
+             // the field cannot be used to store arbitrary text.
+             && data.phone.size() <= 20
+             && data.isPrimary is bool
+             && (!data.keys().hasAny(['relationship'])
+                 || (data.relationship is string && data.relationship.size() <= 40));
+    }
+
+    match /emergencyContacts/{contactId} {
+
+      allow get, list: if isSignedIn() && resource.data.userId == request.auth.uid;
+
+      allow create: if isSignedIn()
+                    && request.resource.data.userId == request.auth.uid
+                    && isValidContactShape(request.resource.data);
+
+      // `userId` and `createdAt` are immutable: reassigning a contact to another
+      // account, or backdating it, serve no feature and would break the
+      // ownership check this whole collection rests on.
+      allow update: if isSignedIn()
+                    && resource.data.userId == request.auth.uid
+                    && request.resource.data.userId == request.auth.uid
+                    && isValidContactShape(request.resource.data)
+                    && !request.resource.data.diff(resource.data).affectedKeys()
+                         .hasAny(['userId', 'createdAt']);
+
+      // Immediate, and deliberately so — see note 2 above.
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    // -------------------------------------------------------------------------
     // alertLogs/{alertId}
     // -------------------------------------------------------------------------
     // Append-only, private to the user who was alerted.

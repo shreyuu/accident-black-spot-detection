@@ -1,4 +1,5 @@
 import Constants from 'expo-constants';
+import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
@@ -34,6 +35,7 @@ const PREFERENCES: readonly { value: ThemePreference; label: string }[] = [
  */
 export default function SettingsScreen() {
   const theme = useTheme();
+  const router = useRouter();
   const { preference, setPreference } = useThemePreference();
   const { user, profile, profileError, refreshProfile } = useAuth();
 
@@ -126,6 +128,21 @@ export default function SettingsScreen() {
               />
             ))}
           </View>
+        </View>
+
+        {/* ---------------------------------------------------------------- */}
+        <View style={{ gap: theme.spacing.sm }}>
+          <AppText variant="titleSmall">Emergency contacts</AppText>
+          <AppText variant="bodySmall" color="textMuted">
+            The people an SOS message can be addressed to.
+          </AppText>
+          <AppButton
+            label="Manage emergency contacts"
+            variant="secondary"
+            onPress={() => router.push('/emergency-contacts')}
+            fullWidth
+            accessibilityHint="Opens the list of people an SOS can be sent to"
+          />
         </View>
 
         {/* ---------------------------------------------------------------- */}
