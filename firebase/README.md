@@ -56,16 +56,28 @@ missing rule fails closed rather than open.
 | `incidentReports`                      | Phase 5  | ✅ Implemented |
 | Storage `incidentReports/{uid}/{file}` | Phase 5  | ✅ Implemented |
 | `emergencyContacts`                    | Phase 6  | ✅ Implemented |
-| `adminAuditLogs`                       | Phase 7  | ⬜ Denied      |
+| `adminAuditLogs`                       | Phase 7  | ✅ Implemented |
 | Storage (everything else)              | —        | ⬜ Denied      |
 
-Automated rules tests using `@firebase/rules-unit-testing` arrive in Phase 7, alongside the admin
-role model they are most needed to verify. Phase 12 reviews the complete rule set.
+Automated rules tests using `@firebase/rules-unit-testing` landed in Phase 7 — see `firebase/tests/`.
+Run them with the emulators up:
 
-The Phase 5 rules were verified manually against a running emulator with the real client SDK — 34
-checks covering every allow and deny path listed below, including two separate signed-in accounts to
-confirm cross-user reads and writes are refused. That was a throwaway script, not a committed test;
-the automated equivalent is Phase 7 work.
+```bash
+npm run test:rules
+```
+
+43 assertions covering roles, ownership and the audit trail. They are deliberately **not** part of
+`npm run verify`, which must stay runnable without an emulator; `npm run verify:all` runs both.
+
+Note the suite runs with `--test-concurrency=1`. Every file shares one emulator and one project id,
+so a parallel `clearFirestore()` wipes another file's fixtures mid-test — which is exactly what
+happened before the flag was added.
+
+Phase 12 reviews the complete rule set.
+
+The Phase 5 and 6 rules were originally verified with throwaway scripts driving the real client SDK
+(34 and 27 checks). Those proved the rules worked at the time and nothing afterwards; the properties
+worth keeping are now pinned in `firebase/tests/`.
 
 ## Key security properties already enforced
 
@@ -120,3 +132,22 @@ the automated equivalent is Phase 7 work.
   `create`, not `update`.
 - Note that a `getDownloadURL()` link carries a token that grants access without re-evaluating these
   rules. That is Firebase behaviour: treat any such URL stored in a report as a capability.
+
+### Roles and the audit trail (Phase 7)
+
+- The role is read from **`request.auth.token.role`**, a Firebase Auth custom claim, never from
+  `users/{id}.role`. A claim costs no document read, cannot recurse into the rules for the document
+  being checked, and can only be written by the Admin SDK — so a user who somehow gained write
+  access to their own profile still could not escalate.
+- **No role grants a write anywhere in the rules.** Privileged writes happen only through the Admin
+  SDK in the dashboard's server actions, which bypasses rules by design. The practical effect is
+  that there is no client-side approval path at all — not for a user, a moderator, or an admin with
+  a stolen mobile token. Authorisation for the Admin SDK path lives in `evaluateModerationDecision`
+  in `packages/shared-types`, which is tested separately.
+- `adminAuditLogs` is **readable by moderators and admins, writable by nobody**. Entries come only
+  from the Admin SDK, committed in the same transaction as the action they record — so an action
+  cannot occur without its log entry. An audit trail the audited can append to, amend or delete is
+  not an audit trail.
+- The trail deliberately stores no copy of the target document: `buildAuditDetails` keeps scalars
+  only and truncates strings, so a report's free text and coordinates cannot be duplicated into a
+  collection with different access rules and no deletion path.

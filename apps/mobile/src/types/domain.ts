@@ -1,6 +1,15 @@
 /**
  * Shared domain vocabulary.
  *
+ * The enums below are **re-exported** from
+ * `@accident-black-spot-detection/shared-types` rather than defined here, so the
+ * mobile app and the admin dashboard cannot drift on a string that also appears
+ * in `firestore.rules`. Every existing import of `@/types/domain` keeps working;
+ * only the definitions moved.
+ *
+ * Entity interfaces and UI labels stay local, because they are this app's
+ * concern — the dashboard renders the same data very differently.
+ *
  * Entity interfaces are introduced by the phase that persists them, together
  * with their Zod schemas and Firestore converters, so runtime validation and
  * types always arrive as a pair.
@@ -9,13 +18,26 @@
 
 import type { Timestamp } from 'firebase/firestore';
 
+// Imported as well as re-exported: a `export … from` statement does not bring the
+// name into this file's scope, and the interfaces below refer to these types.
+import type {
+  BlackSpotCategory,
+  BlackSpotSource,
+  IncidentSeverity,
+  IncidentType,
+  ReportStatus,
+  RiskLevel,
+  UserRole,
+} from '@accident-black-spot-detection/shared-types';
+
 /** Ordered low → critical. Order is meaningful: used for alert prioritisation. */
-export const RISK_LEVELS = ['low', 'medium', 'high', 'critical'] as const;
-export type RiskLevel = (typeof RISK_LEVELS)[number];
+export { RISK_LEVELS, type RiskLevel } from '@accident-black-spot-detection/shared-types';
 
 /** Black spot categories, matching the BlackSpot.category field. */
-export const BLACK_SPOT_CATEGORIES = ['accident', 'crime', 'mixed', 'unsafe-road'] as const;
-export type BlackSpotCategory = (typeof BLACK_SPOT_CATEGORIES)[number];
+export {
+  BLACK_SPOT_CATEGORIES,
+  type BlackSpotCategory,
+} from '@accident-black-spot-detection/shared-types';
 
 /** Human-readable risk labels. Risk is never communicated by colour alone. */
 export const RISK_LEVEL_LABELS: Record<RiskLevel, string> = {
@@ -44,8 +66,7 @@ export const RISK_LEVEL_WEIGHT: Record<RiskLevel, number> = {
  * create and forbid changing it, so a client cannot escalate itself; promotion
  * to moderator or admin happens through the Admin SDK in Phase 7.
  */
-export const USER_ROLES = ['user', 'moderator', 'admin'] as const;
-export type UserRole = (typeof USER_ROLES)[number];
+export { USER_ROLES, type UserRole } from '@accident-black-spot-detection/shared-types';
 
 export const THEME_PREFERENCES = ['system', 'light', 'dark'] as const;
 export type DarkModePreference = (typeof THEME_PREFERENCES)[number];
@@ -94,8 +115,10 @@ export type UserProfilePreferences = Pick<
 // -----------------------------------------------------------------------------
 
 /** How a black spot came to exist. Drives how much trust the UI conveys. */
-export const BLACK_SPOT_SOURCES = ['manual', 'reports', 'algorithm', 'official'] as const;
-export type BlackSpotSource = (typeof BLACK_SPOT_SOURCES)[number];
+export {
+  BLACK_SPOT_SOURCES,
+  type BlackSpotSource,
+} from '@accident-black-spot-detection/shared-types';
 
 /**
  * A published black spot at `blackSpots/{id}`.
@@ -148,8 +171,7 @@ export interface NearbyBlackSpot {
 // -----------------------------------------------------------------------------
 
 /** What the reporter says happened. Drives moderation routing in Phase 7. */
-export const INCIDENT_TYPES = ['accident', 'crime', 'pothole', 'unsafe-road', 'other'] as const;
-export type IncidentType = (typeof INCIDENT_TYPES)[number];
+export { INCIDENT_TYPES, type IncidentType } from '@accident-black-spot-detection/shared-types';
 
 /**
  * Reporter-assessed severity.
@@ -160,8 +182,10 @@ export type IncidentType = (typeof INCIDENT_TYPES)[number];
  * Keeping the vocabularies separate stops a self-reported "critical" from ever
  * reading as an official critical-risk classification.
  */
-export const INCIDENT_SEVERITIES = ['low', 'medium', 'high'] as const;
-export type IncidentSeverity = (typeof INCIDENT_SEVERITIES)[number];
+export {
+  INCIDENT_SEVERITIES,
+  type IncidentSeverity,
+} from '@accident-black-spot-detection/shared-types';
 
 /**
  * Moderation state of a report.
@@ -174,8 +198,7 @@ export type IncidentSeverity = (typeof INCIDENT_SEVERITIES)[number];
  * TODO(phase-11): `draft` is part of the agreed model but nothing writes it yet;
  * local drafts for reports composed offline are Phase 11 work.
  */
-export const REPORT_STATUSES = ['draft', 'pending', 'approved', 'rejected'] as const;
-export type ReportStatus = (typeof REPORT_STATUSES)[number];
+export { REPORT_STATUSES, type ReportStatus } from '@accident-black-spot-detection/shared-types';
 
 /**
  * A crowdsourced report at `incidentReports/{id}`.

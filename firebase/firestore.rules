@@ -27,6 +27,40 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
+    // -------------------------------------------------------------------------
+    // Roles (Phase 7)
+    // -------------------------------------------------------------------------
+    // The role is read from `request.auth.token.role` — a Firebase Auth **custom
+    // claim**, writable only by the Admin SDK. Two reasons it is not read from
+    // `users/{id}.role`:
+    //
+    //   1. A claim costs no document read, so a role check cannot be made slow,
+    //      and cannot recurse into the rules for the document it is checking.
+    //   2. A user who somehow gained write access to their own profile still
+    //      could not escalate, because the claim is what is consulted.
+    //
+    // The profile document keeps a copy for display. If they disagree, the claim
+    // wins — see firebase/scripts/grantRole.mjs.
+
+    function callerRole() {
+      return isSignedIn() && 'role' in request.auth.token ? request.auth.token.role : 'user';
+    }
+
+    function isModerator() {
+      return callerRole() in ['moderator', 'admin'];
+    }
+
+    // Note what is deliberately absent: no role grants **write** access anywhere
+    // in this file. Privileged writes — approving a report, publishing a black
+    // spot, appending to the audit trail — happen only through the Admin SDK in
+    // the dashboard's server actions, which bypasses these rules entirely. So the
+    // rules can stay at their strictest for every client, and the authorisation
+    // for those writes lives in `evaluateModerationDecision`, which the dashboard
+    // calls before the Admin SDK and which is tested independently.
+    //
+    // The practical effect is that there is no client path to approval at all —
+    // for a user, a moderator, or an admin with a stolen mobile token.
+
     // Fields a user is never allowed to set or change on their own profile.
     // `role` is the important one: without this, any user could make themselves
     // an admin with a single client-side write and then approve their own
@@ -308,6 +342,27 @@ service cloud.firestore {
                     && request.resource.data.alertType in ['foreground', 'background', 'push'];
 
       allow update, delete: if false;
+    }
+
+    // -------------------------------------------------------------------------
+    // adminAuditLogs/{entryId}
+    // -------------------------------------------------------------------------
+    // The record of every privileged action.
+    //
+    // **No client may write here at all** — not a moderator, not an admin. Entries
+    // are created only by the Admin SDK inside the dashboard's server actions,
+    // where each one is committed in the same transaction as the action it
+    // records. An audit trail that the people it audits can append to, amend or
+    // delete is not an audit trail, and `if false` on write is the only way to
+    // say that unambiguously.
+    //
+    // Reads are open to moderators as well as admins, deliberately: a log that
+    // only the most privileged accounts can inspect is a poor check on those
+    // accounts. It is not readable by ordinary users, because the entries name
+    // which moderator decided what and that is not public information.
+    match /adminAuditLogs/{entryId} {
+      allow get, list: if isModerator();
+      allow write: if false;
     }
 
     // -------------------------------------------------------------------------

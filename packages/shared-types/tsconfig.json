@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    // Matches apps/mobile's strictness. This package holds the vocabulary both
+    // apps depend on, so it must not be the loose link in the chain.
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "exactOptionalPropertyTypes": true,
+    "forceConsistentCasingInFileNames": true,
+
+    "target": "ES2022",
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "lib": ["ES2023"],
+    "types": ["node"],
+
+    // Consumed as TypeScript source by Metro and by Next's transpilePackages,
+    // so nothing is emitted from here.
+    "noEmit": true,
+    "skipLibCheck": true,
+    // Required by Node's native type stripping, which runs the tests.
+    "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
+    "isolatedModules": true
+  },
+  "include": ["src/**/*.ts"]
+}

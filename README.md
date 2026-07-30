@@ -14,7 +14,7 @@ alerts, supports incident reporting, and provides emergency SOS assistance.
 
 ## Build status
 
-This project is being built in phases. **Phase 6 of 15 is complete.**
+This project is being built in phases. **Phase 7 of 15 is complete.**
 
 | Phase | Scope                                    | Status                    |
 | ----- | ---------------------------------------- | ------------------------- |
@@ -25,7 +25,7 @@ This project is being built in phases. **Phase 6 of 15 is complete.**
 | 4     | Black spot database and proximity alerts | ✅ Complete               |
 | 5     | Crowdsourced incident reporting          | ✅ Complete               |
 | 6     | Emergency contacts and SOS               | ✅ Complete               |
-| 7     | Admin dashboard and moderation           | ⬜ Not started            |
+| 7     | Admin dashboard and moderation           | ✅ Complete               |
 | 8     | Background location and notifications    | ⬜ Not started            |
 | 9     | Nearby facilities                        | ⬜ Not started            |
 | 10    | Spatial clustering, ECLAT, risk scoring  | ⬜ Not started            |
@@ -58,8 +58,15 @@ behind a three-second cancellable countdown, then hands it to the phone's own SM
 Copy, share and call fallbacks are always available. The app **never claims a message was
 delivered** — it cannot know — and it says plainly that it does not contact the emergency services.
 
-**What does not work yet:** no moderation dashboard, no background monitoring. Those screens
-exist as labelled placeholders.
+**Moderation now exists as a separate web dashboard** (`apps/admin`, Next.js). Moderators sign in
+with a role granted as a Firebase Auth custom claim, work a queue of pending reports oldest-first,
+and approve or reject with a note the reporter sees. Administrators additionally publish and
+withdraw black spots. Every privileged action is written in the same Firestore transaction as its
+audit-log entry, so an action cannot happen without its record. **Nobody can decide their own
+report** — enforced in the shared moderation rules, not in the UI.
+
+**What does not work yet:** no background monitoring, no nearby facilities, no analytics service.
+Those screens exist as labelled placeholders.
 
 > **† Android map tiles need your own Google Maps API key.** The map screen — permission flow,
 > location acquisition, and the rest of the app — works on Android, but the map _tiles_ render as a
@@ -90,6 +97,7 @@ service arrive in later phases.
 ```
 accident-black-spot-detection/
 ├── apps/
+│   ├── admin/                # Next.js moderation dashboard (Phase 7)
 │   └── mobile/               # Expo app (Phases 1–6, 8, 9, 11)
 │       ├── app/              # Expo Router routes, file-based
 │       ├── src/
@@ -104,12 +112,14 @@ accident-black-spot-detection/
 │       │   └── utils/        # Geo maths, logger, error normalisation
 │       ├── types/            # Local ambient declarations
 │       └── assets/           # Placeholder icons (real branding: Phase 14)
-├── firebase/                 # Security rules and emulator configuration
+├── packages/
+│   └── shared-types/         # Vocabulary + moderation rules shared by both apps
+├── firebase/                 # Security rules, emulator config, rules test suite
 └── docs/                     # Audit, ADRs, and design documentation
 ```
 
-Directories from the target architecture that do not exist yet — `apps/admin/`,
-`services/analytics/`, `packages/shared-types/` — are created by the phase that needs them.
+Directories from the target architecture that do not exist yet — `services/analytics/` — are
+created by the phase that needs them.
 
 ---
 
@@ -260,7 +270,16 @@ npm run format
 
 ## Known limitations
 
-- **Feature work is incomplete by design.** Only Phases 0–6 are done; see the table above.
+- **Feature work is incomplete by design.** Only Phases 0–7 are done; see the table above.
+- **The dashboard signs an operator out after an hour.** The session cookie holds a Firebase ID
+  token rather than a proper session cookie, and Firebase expires those after an hour. Signing in
+  again restores it. Swapping to `createSessionCookie`, which also makes a role change take effect
+  immediately rather than within the hour, is Phase 12 work.
+- **Roles are granted by a script, not in the UI.** `npm run grant-role` uses the Admin SDK. The
+  first administrator has to come from outside the system — a dashboard that could create its own
+  first admin would be one anyone could create an admin in.
+- **The real-project Admin SDK path has never been exercised.** Everything has only ever run against
+  emulators; `FIREBASE_SERVICE_ACCOUNT_JSON` is written but untested (Phase 14).
 - **SMS delivery can never be confirmed.** `expo-sms` opens the phone's composer and returns no
   usable status on Android at all; on iOS "sent" means the user pressed send, not that anything
   arrived. Every outcome message in the app is phrased about the composer, never about delivery.

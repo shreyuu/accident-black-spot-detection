@@ -1,0 +1,290 @@
+/*
+ * Admin dashboard styling.
+ *
+ * Plain CSS with custom properties rather than a UI framework: this is an
+ * internal tool with a handful of screens, and a design system would be more
+ * code than the pages it styles. The palette echoes the mobile app's tokens so
+ * the two products look related, but it is deliberately not shared — the mobile
+ * theme is React Native style objects, which mean nothing here.
+ *
+ * Accessibility rules carried over from the mobile app, because they are project
+ * rules and not platform ones:
+ *   - risk and status are never conveyed by colour alone; every badge carries text
+ *   - interactive targets are at least 44px
+ *   - contrast meets WCAG AA against the surface behind it
+ */
+
+:root {
+  --navy-900: #060f1d;
+  --navy-800: #0b1f3a;
+  --grey-50: #f6f8fb;
+  --grey-100: #eceff4;
+  --grey-200: #d8dee7;
+  --grey-500: #5f6b7c;
+  --grey-600: #414c5c;
+  --blue-600: #1b62d6;
+  --blue-700: #154fad;
+  --green-600: #0f7a4f;
+  --amber-600: #a96a00;
+  --orange-600: #c1500e;
+  --red-600: #b4232b;
+
+  --surface: #ffffff;
+  --background: var(--grey-50);
+  --border: var(--grey-200);
+  --text: var(--navy-900);
+  --text-muted: var(--grey-600);
+
+  --radius: 10px;
+  --min-target: 44px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+a {
+  color: var(--blue-600);
+}
+
+h1 {
+  font-size: 1.5rem;
+  margin: 0 0 0.25rem;
+}
+
+h2 {
+  font-size: 1.125rem;
+  margin: 0 0 0.5rem;
+}
+
+.shell {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem 4rem;
+}
+
+.topbar {
+  background: var(--navy-800);
+  color: #fff;
+  padding: 0.75rem 1.25rem;
+}
+
+.topbar-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.topbar nav {
+  display: flex;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+}
+
+.topbar nav a {
+  color: #fff;
+  text-decoration: none;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius);
+  min-height: var(--min-target);
+  display: inline-flex;
+  align-items: center;
+}
+
+.topbar nav a[aria-current='page'] {
+  background: rgba(255, 255, 255, 0.16);
+  font-weight: 600;
+}
+
+.identity {
+  font-size: 0.8125rem;
+  opacity: 0.85;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+.small {
+  font-size: 0.8125rem;
+}
+
+.notice {
+  background: var(--grey-100);
+  border-left: 4px solid var(--blue-600);
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  margin: 0 0 1rem;
+}
+
+.notice.warn {
+  border-left-color: var(--red-600);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1.5px solid currentColor;
+  border-radius: 999px;
+  padding: 0.1rem 0.55rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.badge.low {
+  color: var(--green-600);
+}
+.badge.medium {
+  color: var(--amber-600);
+}
+.badge.high {
+  color: var(--orange-600);
+}
+.badge.critical {
+  color: var(--red-600);
+}
+.badge.approved {
+  color: var(--green-600);
+}
+.badge.rejected {
+  color: var(--red-600);
+}
+.badge.pending {
+  color: var(--amber-600);
+}
+
+label {
+  display: block;
+  font-weight: 600;
+  font-size: 0.8125rem;
+  margin-bottom: 0.25rem;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  min-height: var(--min-target);
+  padding: 0.5rem 0.65rem;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  font: inherit;
+  background: var(--surface);
+  color: var(--text);
+}
+
+textarea {
+  min-height: 80px;
+  resize: vertical;
+}
+
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+button:focus-visible,
+a:focus-visible {
+  outline: 3px solid var(--blue-600);
+  outline-offset: 2px;
+}
+
+button {
+  min-height: var(--min-target);
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius);
+  border: 1.5px solid transparent;
+  background: var(--blue-600);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  background: var(--blue-700);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+button.secondary {
+  background: var(--surface);
+  color: var(--blue-600);
+  border-color: var(--border);
+}
+
+button.danger {
+  background: var(--red-600);
+}
+
+.field-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 0.5rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.scroll-x {
+  overflow-x: auto;
+}
+
+.result {
+  border-radius: 6px;
+  padding: 0.6rem 0.9rem;
+  margin-top: 0.75rem;
+  font-size: 0.875rem;
+}
+
+.result.ok {
+  background: #e7f4ee;
+  color: #0b5c3c;
+}
+
+.result.error {
+  background: #fdeaea;
+  color: #8e1a21;
+}
