@@ -58,7 +58,10 @@ export const contactPhoneSchema = phoneSchema.refine((value) => value.length > 0
 export const contactRelationshipSchema = z
   .string()
   .trim()
-  .max(CONTACT_RELATIONSHIP_MAX_LENGTH, `Keep this under ${CONTACT_RELATIONSHIP_MAX_LENGTH} characters.`);
+  .max(
+    CONTACT_RELATIONSHIP_MAX_LENGTH,
+    `Keep this under ${CONTACT_RELATIONSHIP_MAX_LENGTH} characters.`,
+  );
 
 export const emergencyContactFormSchema = z.object({
   name: contactNameSchema,

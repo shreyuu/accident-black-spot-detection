@@ -14,7 +14,7 @@ alerts, supports incident reporting, and provides emergency SOS assistance.
 
 ## Build status
 
-This project is being built in phases. **Phase 5 of 15 is complete.**
+This project is being built in phases. **Phase 6 of 15 is complete.**
 
 | Phase | Scope                                    | Status                    |
 | ----- | ---------------------------------------- | ------------------------- |
@@ -24,7 +24,7 @@ This project is being built in phases. **Phase 5 of 15 is complete.**
 | 3     | Location permissions and map MVP         | ✅ Complete (see caveat†) |
 | 4     | Black spot database and proximity alerts | ✅ Complete               |
 | 5     | Crowdsourced incident reporting          | ✅ Complete               |
-| 6     | Emergency contacts and SOS               | ⬜ Not started            |
+| 6     | Emergency contacts and SOS               | ✅ Complete               |
 | 7     | Admin dashboard and moderation           | ⬜ Not started            |
 | 8     | Background location and notifications    | ⬜ Not started            |
 | 9     | Nearby facilities                        | ⬜ Not started            |
@@ -52,7 +52,13 @@ the moderator's note where there is one. A report is **never** turned into a bla
 automatically — approval is a human decision, and publishing a black spot from it is a second,
 separate one.
 
-**What does not work yet:** no SOS, no moderation dashboard, no background monitoring. Those screens
+**Emergency SOS works too**: the user keeps a short list of emergency contacts, and the SOS screen
+composes a message with their name, coordinates, an accuracy disclosure, a map link and a timestamp,
+behind a three-second cancellable countdown, then hands it to the phone's own SMS composer.
+Copy, share and call fallbacks are always available. The app **never claims a message was
+delivered** — it cannot know — and it says plainly that it does not contact the emergency services.
+
+**What does not work yet:** no moderation dashboard, no background monitoring. Those screens
 exist as labelled placeholders.
 
 > **† Android map tiles need your own Google Maps API key.** The map screen — permission flow,
@@ -254,7 +260,15 @@ npm run format
 
 ## Known limitations
 
-- **Feature work is incomplete by design.** Only Phases 0–5 are done; see the table above.
+- **Feature work is incomplete by design.** Only Phases 0–6 are done; see the table above.
+- **SMS delivery can never be confirmed.** `expo-sms` opens the phone's composer and returns no
+  usable status on Android at all; on iOS "sent" means the user pressed send, not that anything
+  arrived. Every outcome message in the app is phrased about the composer, never about delivery.
+- **The SMS composer does not exist on the iOS simulator**, so the SOS send path can only be
+  exercised on a real device (Phase 13). The copy, share and call fallbacks are the routes that
+  work there — and they are the routes that work on a SIM-less device too.
+- **Emergency contacts are other people's personal data.** They are stored only for their owner,
+  capped at five, never told they were added, and never contacted automatically.
 - **There is no moderation interface yet.** Reports are submitted and stored as `pending`, but
   nothing can approve them until the admin dashboard arrives in Phase 7. Approving a report during
   Phase 5 testing means writing to the emulator through its admin API by hand.

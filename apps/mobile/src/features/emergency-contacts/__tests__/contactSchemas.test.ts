@@ -65,9 +65,9 @@ describe('emergencyContactFormSchema', () => {
     });
 
     it('rejects something that is not a number at all', () => {
-      expect(emergencyContactFormSchema.safeParse(values({ phone: 'ask at reception' })).success).toBe(
-        false,
-      );
+      expect(
+        emergencyContactFormSchema.safeParse(values({ phone: 'ask at reception' })).success,
+      ).toBe(false);
     });
 
     it('normalises away separators but never the digits', () => {

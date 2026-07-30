@@ -73,9 +73,11 @@ export default function SosScreen() {
     requestAccess,
   } = useLocation('high');
 
-  const { contacts, loading: contactsLoading, error: contactsError } = useEmergencyContacts(
-    user?.uid ?? null,
-  );
+  const {
+    contacts,
+    loading: contactsLoading,
+    error: contactsError,
+  } = useEmergencyContacts(user?.uid ?? null);
 
   const [selectedIds, setSelectedIds] = useState<string[] | null>(null);
   const [note, setNote] = useState('');
