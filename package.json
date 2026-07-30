@@ -6,7 +6,8 @@
   "license": "MIT",
   "workspaces": [
     "apps/*",
-    "packages/*"
+    "packages/*",
+    "firebase"
   ],
   "engines": {
     "node": ">=20.19.4"
@@ -24,7 +25,11 @@
     "test": "npm run test --workspaces --if-present",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "verify": "npm run format:check && npm run lint && npm run typecheck && npm run test"
+    "verify": "npm run format:check && npm run lint && npm run typecheck && npm run test",
+    "grant-role": "node firebase/scripts/grantRole.mjs",
+    "test:rules": "npm run test:rules --workspace @accident-black-spot-detection/firebase",
+    "admin": "npm run dev --workspace @accident-black-spot-detection/admin",
+    "verify:all": "npm run verify && npm run test:rules"
   },
   "devDependencies": {
     "prettier": "^3.9.6"

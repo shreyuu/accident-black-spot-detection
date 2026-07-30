@@ -1,0 +1,167 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import {
+  assertFails,
+  assertSucceeds,
+  initializeTestEnvironment,
+} from '@firebase/rules-unit-testing';
+
+/**
+ * Shared setup for the Firestore rules tests.
+ *
+ * These are the first *automated* security tests in the project. Phases 5 and 6
+ * verified their rules with throwaway scripts driving the real client SDK, which
+ * proved the rules worked at the time but proved nothing afterwards. This suite
+ * runs on demand and fails the build.
+ *
+ * ## What these tests can and cannot show
+ *
+ * `initializeTestEnvironment` talks to the Firestore emulator, so the rules under
+ * test are the real ones in `firestore.rules`, evaluated by the real engine — not
+ * a reimplementation. What they cannot cover is anything the **Admin SDK** does,
+ * because it bypasses rules by design; that half of the authorisation story is
+ * covered by the `evaluateModerationDecision` tests in `packages/shared-types`.
+ *
+ * Between them the two suites cover both paths into the data. Neither alone does.
+ *
+ * ## Why the test files run serially
+ *
+ * `--test-concurrency=1` in the npm script is load-bearing. Every file shares one
+ * emulator and one project id (`singleProjectMode` is on), so each `clearFirestore()`
+ * wipes the whole database — including fixtures another file had just seeded.
+ * Running in parallel produced exactly that: a suite that passed or failed
+ * depending on which file reached its `beforeEach` first. Serial execution costs a
+ * couple of seconds and makes the result mean something.
+ */
+
+const here = dirname(fileURLToPath(import.meta.url));
+
+/** Matches `.firebaserc`. The `demo-` prefix cannot reach real Google Cloud. */
+export const PROJECT_ID = 'demo-accident-black-spot-detection';
+
+export { assertFails, assertSucceeds };
+
+export async function createTestEnvironment() {
+  return initializeTestEnvironment({
+    projectId: PROJECT_ID,
+    firestore: {
+      rules: readFileSync(join(here, '..', 'firestore.rules'), 'utf8'),
+      host: '127.0.0.1',
+      port: 8080,
+    },
+  });
+}
+
+/**
+ * A signed-in context carrying a role custom claim.
+ *
+ * The second argument to `authenticatedContext` becomes the token's claims, which
+ * is exactly how `request.auth.token.role` is populated in production by
+ * `grantRole.mjs`. So a test that grants itself `role: 'admin'` here is
+ * faithfully simulating an account an administrator promoted — it is not a
+ * shortcut around the rules.
+ */
+export function asUser(env, uid) {
+  return env.authenticatedContext(uid, { role: 'user' }).firestore();
+}
+
+export function asModerator(env, uid) {
+  return env.authenticatedContext(uid, { role: 'moderator' }).firestore();
+}
+
+export function asAdmin(env, uid) {
+  return env.authenticatedContext(uid, { role: 'admin' }).firestore();
+}
+
+/** No claims at all, as a brand-new account has before any role is granted. */
+export function asRolelessUser(env, uid) {
+  return env.authenticatedContext(uid, {}).firestore();
+}
+
+export function asAnonymous(env) {
+  return env.unauthenticatedContext().firestore();
+}
+
+/**
+ * Seed a document bypassing the rules.
+ *
+ * `withSecurityRulesDisabled` is how a test arranges state it could not
+ * legitimately create — an approved report, a black spot, an audit entry. Using
+ * it for *arrangement* is correct; using it for the action under test would make
+ * the test meaningless, so it appears only in setup here.
+ */
+export async function seed(env, path, data) {
+  await env.withSecurityRulesDisabled(async (context) => {
+    await context.firestore().doc(path).set(data);
+  });
+}
+
+const NOW = new Date('2026-07-30T12:00:00.000Z');
+
+export function reportFixture(overrides = {}) {
+  return {
+    reporterId: 'reporter-1',
+    type: 'accident',
+    description: 'A car left the road on the bend by the school and hit the barrier.',
+    latitude: 51.5074,
+    longitude: -0.1278,
+    geohash: 'gcpvj0duq5',
+    severity: 'high',
+    imageUrls: [],
+    status: 'pending',
+    createdAt: NOW,
+    updatedAt: NOW,
+    ...overrides,
+  };
+}
+
+export function blackSpotFixture(overrides = {}) {
+  return {
+    name: 'School bend',
+    category: 'accident',
+    latitude: 51.5074,
+    longitude: -0.1278,
+    geohash: 'gcpvj0duq5',
+    radiusM: 300,
+    riskLevel: 'high',
+    severityScore: 60,
+    accidentCount: 3,
+    crimeCount: 0,
+    reportCount: 2,
+    verified: true,
+    active: true,
+    source: 'manual',
+    createdBy: 'admin-1',
+    createdAt: NOW,
+    updatedAt: NOW,
+    ...overrides,
+  };
+}
+
+export function auditFixture(overrides = {}) {
+  return {
+    actorId: 'moderator-1',
+    actorEmail: 'moderator@example.test',
+    actorRole: 'moderator',
+    action: 'report.approved',
+    targetType: 'incidentReport',
+    targetId: 'report-1',
+    summary: 'Approved an accident report',
+    details: { decision: 'approved' },
+    createdAt: NOW,
+  };
+}
+
+export function contactFixture(overrides = {}) {
+  return {
+    userId: 'owner-1',
+    name: 'Sam Doe',
+    phone: '+447700900123',
+    isPrimary: false,
+    createdAt: NOW,
+    updatedAt: NOW,
+    ...overrides,
+  };
+}

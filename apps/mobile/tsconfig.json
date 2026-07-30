@@ -12,6 +12,12 @@
     "exactOptionalPropertyTypes": true,
     "forceConsistentCasingInFileNames": true,
 
+    // Needed only because packages/shared-types is consumed as TypeScript source
+    // and its internal imports carry explicit `.ts` extensions — which Node's
+    // native type stripping requires to run that package's own tests. This app
+    // emits nothing (`tsc --noEmit`), so the flag changes no output.
+    "allowImportingTsExtensions": true,
+
     // Absolute imports. `@/` maps to src/, so route files under app/ never need
     // to walk back up the tree with ../../.
     "paths": {
