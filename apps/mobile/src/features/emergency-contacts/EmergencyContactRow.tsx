@@ -152,7 +152,12 @@ function RowAction({
 
 const styles = StyleSheet.create({
   card: { borderWidth: StyleSheet.hairlineWidth },
-  header: { alignItems: 'flex-start', flexDirection: 'row', gap: 12, justifyContent: 'space-between' },
+  header: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    gap: 12,
+    justifyContent: 'space-between',
+  },
   identity: { flex: 1, gap: 2 },
   badge: { alignItems: 'center', borderWidth: 1.5, flexDirection: 'row' },
   actions: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap' },

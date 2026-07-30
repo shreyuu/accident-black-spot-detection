@@ -57,8 +57,7 @@ export const SOS_OUTCOME_MESSAGES: Record<SosDeliveryOutcome, string> = {
   'composer-unknown':
     'Your messaging app was opened. This app cannot tell whether the message was sent, so check ' +
     'your messages — and if you can, call someone as well.',
-  unavailable:
-    'This device cannot send text messages. Use Copy, Share or Call below instead.',
+  unavailable: 'This device cannot send text messages. Use Copy, Share or Call below instead.',
 };
 
 /** Whether an SMS composer exists here at all. */

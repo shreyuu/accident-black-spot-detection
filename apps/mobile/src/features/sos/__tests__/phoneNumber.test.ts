@@ -1,8 +1,4 @@
-import {
-  formatPhoneForDisplay,
-  toDialString,
-  toTelUri,
-} from '@/features/sos/phoneNumber';
+import { formatPhoneForDisplay, toDialString, toTelUri } from '@/features/sos/phoneNumber';
 
 /**
  * A number mangled on its way into a `tel:` URI fails at the worst possible

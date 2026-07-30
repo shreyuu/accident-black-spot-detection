@@ -36,8 +36,15 @@ export default function EmergencyContactsScreen() {
   const userId = user?.uid ?? null;
 
   const { contacts, loading, error, refetch } = useEmergencyContacts(userId);
-  const { add, update, remove, makePrimary, saving, error: mutationError, clearError } =
-    useContactMutations(userId);
+  const {
+    add,
+    update,
+    remove,
+    makePrimary,
+    saving,
+    error: mutationError,
+    clearError,
+  } = useContactMutations(userId);
 
   const [editing, setEditing] = useState<EmergencyContact | null>(null);
   const [adding, setAdding] = useState(false);

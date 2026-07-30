@@ -90,10 +90,14 @@ export async function fetchEmergencyContacts(userId: string): Promise<EmergencyC
    * blackSpotRepository.
    */
   if (snapshot.metadata.fromCache && snapshot.empty) {
-    throw new AppError('network', 'Could not load your emergency contacts — you appear to be offline.', {
-      retryable: true,
-      technicalMessage: 'The contacts query resolved empty from the Firestore local cache.',
-    });
+    throw new AppError(
+      'network',
+      'Could not load your emergency contacts — you appear to be offline.',
+      {
+        retryable: true,
+        technicalMessage: 'The contacts query resolved empty from the Firestore local cache.',
+      },
+    );
   }
 
   const contacts: EmergencyContact[] = [];

@@ -70,7 +70,9 @@ describe('buildSosMessage', () => {
     it('includes coordinates and a map link', () => {
       const message = buildSosMessage({ senderName: 'A', location: LOCATION, now: NOW });
       expect(message).toContain('51.50735, -0.12776');
-      expect(message).toContain('https://www.google.com/maps/search/?api=1&query=51.50735,-0.12776');
+      expect(message).toContain(
+        'https://www.google.com/maps/search/?api=1&query=51.50735,-0.12776',
+      );
     });
 
     it('discloses how rough the fix is', () => {
