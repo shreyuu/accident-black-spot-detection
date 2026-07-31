@@ -5,6 +5,7 @@ import { StyleSheet, View } from 'react-native';
 
 import {
   AppButton,
+  AppSwitch,
   AppText,
   ConfirmationDialog,
   DisclaimerNotice,
@@ -14,6 +15,8 @@ import {
 } from '@/components';
 import { env } from '@/config/env';
 import { DRIVING_DISCLAIMER, LOCATION_ACCURACY_DISCLAIMER } from '@/constants/disclaimer';
+import { BackgroundMonitoringDisclosure } from '@/features/alerts/BackgroundMonitoringDisclosure';
+import { useBackgroundMonitoring } from '@/features/alerts/useBackgroundMonitoring';
 import { useAuth } from '@/features/auth/AuthProvider';
 import { logout } from '@/features/auth/authService';
 import { useTheme, useThemePreference, type ThemePreference } from '@/theme';
@@ -152,9 +155,12 @@ export default function SettingsScreen() {
             Warning radius: {profile?.alertRadiusM ?? env.defaultAlertRadiusM} m
           </AppText>
           <AppText variant="caption" color="textSubtle">
-            An adjustable radius, alert sound, haptics and background monitoring arrive in Phase 11.
+            An adjustable radius, alert sound and haptics arrive in Phase 11.
           </AppText>
         </View>
+
+        {/* ---------------------------------------------------------------- */}
+        <BackgroundMonitoringSection />
 
         {/* ---------------------------------------------------------------- */}
         <View style={{ gap: theme.spacing.sm }}>
@@ -193,6 +199,114 @@ export default function SettingsScreen() {
         testID="sign-out-dialog"
       />
     </ScreenContainer>
+  );
+}
+
+/**
+ * Background monitoring opt-in.
+ *
+ * Split into its own component so that the toggle, the disclosure and the
+ * reconciliation hook live together — the invariant that matters is that the
+ * disclosure is shown *before* `enable()` runs, and that is much easier to see
+ * when the three are adjacent than when they are spread through the screen.
+ *
+ * The switch is not optimistic. It reflects the stored preference, and the
+ * status line below it reports what is actually happening — because "on" while
+ * the OS is refusing to grant permission would be a lie the user acts on.
+ */
+function BackgroundMonitoringSection() {
+  const theme = useTheme();
+  const { profile } = useAuth();
+  const { decision, busy, error, enable, disable, openSettings } = useBackgroundMonitoring();
+
+  const [showDisclosure, setShowDisclosure] = useState(false);
+
+  const optedIn = profile?.backgroundMonitoringEnabled ?? false;
+
+  function handleToggle(next: boolean): void {
+    if (next) {
+      // The disclosure gates the opt-in. Nothing is requested or started until
+      // it has been read and accepted.
+      setShowDisclosure(true);
+      return;
+    }
+    void disable();
+  }
+
+  return (
+    <View style={{ gap: theme.spacing.sm }}>
+      <AppText variant="titleSmall">Background warnings</AppText>
+
+      <AppSwitch
+        value={optedIn}
+        onValueChange={handleToggle}
+        label="Warn me while the app is closed"
+        description="Off by default. Uses extra battery and needs background location access."
+        disabled={busy || profile === null}
+        testID="background-monitoring-switch"
+      />
+
+      <AppText
+        variant="caption"
+        color={decision.status === 'permission-blocked' ? 'danger' : 'textMuted'}
+      >
+        {decision.message}
+      </AppText>
+
+      {/*
+        Repeated here rather than left in the disclosure alone. The disclosure is
+        shown once, before opting in; this is what someone reads months later
+        when they are wondering why a zone they passed did not warn them.
+      */}
+      {decision.status === 'active' ? (
+        <AppText variant="caption" color="textSubtle">
+          Covers high and critical risk areas only, from black spots already saved to this device.
+          Open the map occasionally to keep that data current for where you are.
+        </AppText>
+      ) : null}
+
+      {decision.status === 'permission-blocked' ? (
+        <AppButton
+          label="Open device settings"
+          variant="secondary"
+          onPress={() => void openSettings()}
+          fullWidth
+          accessibilityHint="Opens this app’s permissions in your device settings"
+        />
+      ) : null}
+
+      {/*
+        Only for the missing *background* upgrade. Re-requesting is the only way
+        back for someone who dismissed the OS prompt, and on Android the request
+        is a trip to Settings they may simply not have completed.
+
+        Deliberately not offered when foreground access is what is missing: the
+        request would fail, because neither platform will grant the background
+        upgrade first. The message points at the map instead, which is where that
+        permission is explained and asked for.
+      */}
+      {optedIn && decision.status === 'needs-background-permission' ? (
+        <AppButton
+          label="Grant background location access"
+          variant="secondary"
+          onPress={() => void enable()}
+          loading={busy}
+          fullWidth
+        />
+      ) : null}
+
+      {error !== null ? <ErrorState error={error} title="Background warnings" /> : null}
+
+      <BackgroundMonitoringDisclosure
+        visible={showDisclosure}
+        onAccept={() => {
+          setShowDisclosure(false);
+          void enable();
+        }}
+        onCancel={() => setShowDisclosure(false)}
+        testID="background-monitoring-disclosure"
+      />
+    </View>
   );
 }
 

@@ -31,9 +31,14 @@ import { logger } from '@/utils/logger';
  * on every platform: if it cannot be loaded, notifications are skipped and the
  * in-app banner and haptics carry on.
  *
- * TODO(phase-8): the development build introduced there supplies the module
- * properly, at which point this can go back to a static import — but only if the
- * app never runs under Expo Go again.
+ * **Phase 8 decision: the lazy require stays.** The development build does supply
+ * the module properly, so a static import would now work — but reverting would
+ * buy nothing and reintroduce a failure mode that took a long time to diagnose.
+ * "The app never runs under Expo Go again" is not something this file can
+ * enforce, and this module is now also reached from `backgroundLocationTask`,
+ * where an import-time throw would take out a headless task with no UI to report
+ * it. A guarded require costs one branch; the alternative cost the entire tab
+ * group on Android.
  */
 
 type NotificationsModule = typeof import('expo-notifications');

@@ -98,6 +98,17 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         // a binary, so it is overridden here to match the other two.
         NSLocationAlwaysUsageDescription:
           'Accident Black Spot Detection can warn you about nearby accident-prone areas while the app is in the background. This is optional and off by default.',
+        // UIBackgroundModes is NOT set here. The expo-location plugin appends
+        // "location" to it, and expo-task-manager's own plugin appends "fetch"
+        // unconditionally — both run after this object is applied, so anything
+        // written here is added to rather than replaced.
+        //
+        // TODO(phase-14): "fetch" is declared but unused; this app has no
+        // background fetch task. Verified in the generated Info.plist. App Store
+        // review does query unused background modes, so before submission either
+        // strip it with a small `withInfoPlist` mod or confirm expo-task-manager
+        // has stopped adding it. Harmless until then — a declared capability the
+        // app never exercises, not a permission over user data.
       },
     },
 
@@ -122,11 +133,11 @@ export default ({ config }: ConfigContext): ExpoConfig => {
           ? {}
           : { googleMaps: { apiKey: googleMapsKeyAndroid } }),
       },
-      // ACCESS_COARSE_LOCATION and ACCESS_FINE_LOCATION are contributed by the
-      // expo-location plugin below; listing them here as well produced duplicate
-      // entries in the merged manifest. ACCESS_BACKGROUND_LOCATION and the
-      // foreground-service permissions arrive in Phase 8, alongside the opt-in
-      // toggle and battery disclosure that must accompany them.
+      // Every location permission — ACCESS_COARSE_LOCATION, ACCESS_FINE_LOCATION,
+      // ACCESS_BACKGROUND_LOCATION, FOREGROUND_SERVICE and
+      // FOREGROUND_SERVICE_LOCATION — is contributed by the expo-location plugin
+      // below. Listing any of them here as well produced duplicate entries in the
+      // merged manifest.
     },
 
     web: {
@@ -149,20 +160,36 @@ export default ({ config }: ConfigContext): ExpoConfig => {
           // fuller explanation, including what is not stored.
           locationWhenInUsePermission:
             'Accident Black Spot Detection uses your location to warn you when you approach a known accident-prone or crime-prone area.',
-          // The plugin writes the "Always" Info.plist keys regardless of the
-          // background flags below, defaulting them to the generic
-          // "Allow $(PRODUCT_NAME) to access your location". A vague purpose
-          // string is exactly what App Store review rejects, so it is replaced
-          // here even though Phase 3 never requests Always authorisation.
+          // Read by the OS when the app asks to upgrade to "Always" — which only
+          // happens after the user has switched background monitoring on and
+          // read the in-app disclosure. The generic default the plugin would
+          // otherwise write ("Allow $(PRODUCT_NAME) to access your location") is
+          // both an App Store review rejection and, more importantly, not enough
+          // for the user to make an informed choice.
           locationAlwaysAndWhenInUsePermission:
             'Accident Black Spot Detection can warn you about nearby accident-prone areas while the app is in the background. This is optional and off by default.',
-          // Background location is deliberately NOT enabled. Turning it on would
-          // add the background mode to the build before there is any feature
-          // behind it, and before the user has been told about the battery cost.
-          // That arrives in Phase 8.
-          isIosBackgroundLocationEnabled: false,
-          isAndroidBackgroundLocationEnabled: false,
-          isAndroidForegroundServiceEnabled: false,
+          // Phase 8. These three flags are what make background monitoring
+          // possible at all, and each one has a user-visible cost:
+          //
+          //   - iOS gains the `location` background mode, and with it the blue
+          //     status-bar indicator whenever the task is running.
+          //   - Android gains ACCESS_BACKGROUND_LOCATION, which Android 11+
+          //     presents as a separate "Allow all the time" trip to Settings.
+          //   - The foreground service is what stops Android killing the task
+          //     within minutes; it is legally and practically required to show a
+          //     persistent notification while it runs.
+          //
+          // None of this activates on its own: the permissions merely exist in
+          // the binary. `backgroundMonitoringEnabled` defaults to false, the
+          // disclosure in Settings is shown before anything is requested, and
+          // nothing is started until the user opts in. See
+          // docs/background-monitoring.md.
+          isIosBackgroundLocationEnabled: true,
+          isAndroidBackgroundLocationEnabled: true,
+          isAndroidForegroundServiceEnabled: true,
+          // TODO(phase-14): supply `androidForegroundServiceIcon` alongside the
+          // real icon set. Until then Android draws its own default glyph in the
+          // persistent notification, which is legible but unbranded.
         },
       ],
       [
