@@ -2,7 +2,14 @@ import type { User } from 'firebase/auth';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 
+import {
+  buildBackgroundAlertSnapshot,
+  clearBackgroundAlertSnapshot,
+  saveBackgroundAlertSnapshot,
+} from '@/features/alerts/backgroundAlertSnapshot';
+import { clearZoneStates } from '@/features/alerts/zoneStateStore';
 import { subscribeToAuthState } from '@/features/auth/authService';
+import { stopBackgroundMonitoring } from '@/features/location/backgroundLocationService';
 import { createUserProfile, getUserProfile } from '@/services/firebase/userProfileRepository';
 import type { UserProfile } from '@/types/domain';
 import { toAppError, type AppError } from '@/utils/errors';
@@ -92,6 +99,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setProfile(null);
         setProfileError(null);
         setStatus('unauthenticated');
+        // Sign-out has to reach the background task too. It runs headless off
+        // these two files, so leaving them behind would mean the next person to
+        // use the device inherits the previous user's warnings — and their alert
+        // log attribution.
+        void (async () => {
+          await stopBackgroundMonitoring();
+          await Promise.all([clearBackgroundAlertSnapshot(), clearZoneStates()]);
+        })();
         return;
       }
 
@@ -106,6 +121,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       unsubscribe();
     };
   }, [loadProfile]);
+
+  /**
+   * Mirror the preferences the background task depends on to disk.
+   *
+   * The task runs with no React tree and no guarantee of a network, so it reads
+   * this snapshot rather than Firestore. Writing it here — where the profile is
+   * loaded and refreshed — is what keeps the two in step: a preference changed
+   * in Settings reaches the background path on the next refresh, not on the next
+   * launch.
+   */
+  useEffect(() => {
+    if (profile === null) {
+      return;
+    }
+    void saveBackgroundAlertSnapshot(buildBackgroundAlertSnapshot(profile));
+  }, [profile]);
 
   const refreshProfile = useCallback(async (): Promise<void> => {
     if (user !== null) {

@@ -94,8 +94,9 @@ npm resolves majors the SDK does not support.
    stripped the `serverTimestamp()` sentinels and every write failed with an opaque PERMISSION_DENIED.
 5. **A marker tap also fires `MapView.onPress`.** Guard on `event.nativeEvent.action !== 'marker-press'`.
 6. **RNTL 14 made `render` and `fireEvent` async.** A missing `await` typechecks fine and fails at runtime.
-7. **Android suppresses the Play Services "Location Accuracy" dialog** (`mayShowUserSettingsDialog:
-   false`) and falls back to low accuracy on `ERR_LOCATION_SETTINGS_UNSATISFIED`.
+7. **Android suppresses the Play Services "Location Accuracy" dialog** with
+   `mayShowUserSettingsDialog: false`, and falls back to low accuracy on
+   `ERR_LOCATION_SETTINGS_UNSATISFIED`.
 8. **The React Compiler ESLint rules are strict.** No `setState` in an effect for derived state, no
    writing refs during render, and **no calling `Date.now()` during render** — that last one is why
    `src/utils/useNow.ts` exists. All three caught real problems.
@@ -203,7 +204,7 @@ updates; the OS's background-execution limits are documented honestly.
    there are comments explaining why they were deliberately left off until this phase.
 4. Background monitoring must be **opt-in and off by default**. `UserProfile.backgroundMonitoringEnabled`
    already exists and already defaults to `false`. Add the Settings toggle, and an honest battery and
-   privacy disclosure shown *before* the user enables it.
+   privacy disclosure shown _before_ the user enables it.
 5. Persist proximity zone state so force-quitting mid-zone does not re-alert on return.
 6. Document the OS limits truthfully: iOS may defer or coalesce background updates, Android's
    Doze and manufacturer battery managers can suspend the task entirely, and neither platform

@@ -7,6 +7,14 @@ import { useAuth } from '@/features/auth/AuthProvider';
 import { AppProviders } from '@/providers/AppProviders';
 import { useTheme } from '@/theme';
 
+// Imported for its side effect: the module calls `TaskManager.defineTask` at
+// evaluation time. It has to be reached from the root layout because the OS may
+// start this bundle headlessly — with no screen mounted and no navigation — to
+// hand over a background location update, and it looks the task up by name
+// immediately. A definition that only ran once a screen imported it would not
+// exist yet, and the update would be dropped.
+import '@/features/alerts/backgroundLocationTask';
+
 // Keep the native splash visible until the first screen is ready to paint, so
 // the user never sees a flash of unstyled background.
 void SplashScreen.preventAutoHideAsync();

@@ -5,6 +5,7 @@ export {
   type AppButtonVariant,
 } from '@/components/AppButton';
 export { AppCheckbox, type AppCheckboxProps } from '@/components/AppCheckbox';
+export { AppSwitch, type AppSwitchProps } from '@/components/AppSwitch';
 export { AppText, type AppTextProps } from '@/components/AppText';
 export { AppTextInput, type AppTextInputProps } from '@/components/AppTextInput';
 export { ConfirmationDialog, type ConfirmationDialogProps } from '@/components/ConfirmationDialog';
