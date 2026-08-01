@@ -195,14 +195,36 @@ export const darkColors: ThemeColors = {
   text: palette.grey50,
   textMuted: palette.grey300,
   textSubtle: palette.grey400,
-  textOnPrimary: palette.white,
+  // Dark, not white. See the note below: in dark mode the accent colours are
+  // light, so what sits on top of them has to be dark.
+  textOnPrimary: palette.navy900,
 
-  primary: palette.blue500,
-  primaryPressed: palette.blue600,
+  /*
+   * Light accents with dark text on them — the inverse of the light theme.
+   *
+   * This was originally `blue500` and `#E8535C` with white text, and the
+   * Phase 11 contrast tests measured those pairs at 4.04:1 and 3.61:1, both
+   * below the 4.5:1 WCAG AA requirement. Every filled button in the app uses
+   * the first pair and the SOS button uses the second, so neither was
+   * acceptable.
+   *
+   * The first attempt at a fix — darkening the fills so white text passed —
+   * broke the same tokens in their *other* role: `primary` and `danger` are
+   * also used as text colours on the dark background, and darkening them
+   * pushed those below 4.5:1 instead. One token cannot be both a dark fill and
+   * a light text colour.
+   *
+   * The resolution is the standard dark-theme one: keep the accent light and
+   * flip what sits on it. `blue300` and `red300` now measure 7.44:1 and 6.80:1
+   * against the background as text, and the same against dark text as fills —
+   * one token, both roles, comfortably passing.
+   */
+  primary: palette.blue300,
+  primaryPressed: '#A6C8FA',
   primaryMuted: '#16304F',
 
-  danger: '#E8535C',
-  dangerPressed: palette.red600,
+  danger: palette.red300,
+  dangerPressed: '#F5A6A9',
 
   success: palette.green300,
   warning: palette.amber300,

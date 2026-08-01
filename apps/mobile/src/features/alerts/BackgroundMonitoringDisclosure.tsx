@@ -7,6 +7,7 @@ import {
   BACKGROUND_MONITORING_IOS_NOTE,
 } from '@/constants/disclaimer';
 import { useTheme } from '@/theme';
+import { useReducedMotion } from '@/utils/useReducedMotion';
 
 export interface BackgroundMonitoringDisclosureProps {
   visible: boolean;
@@ -43,6 +44,7 @@ export function BackgroundMonitoringDisclosure({
   testID,
 }: BackgroundMonitoringDisclosureProps) {
   const theme = useTheme();
+  const reducedMotion = useReducedMotion();
 
   const platformNote =
     Platform.OS === 'ios'
@@ -55,7 +57,11 @@ export function BackgroundMonitoringDisclosure({
     <Modal
       visible={visible}
       transparent
-      animationType="fade"
+      // The app has no sliding, scaling or parallax animation anywhere — this
+      // fade is the only animation it has. It is still switched off when the
+      // user has asked for reduced motion: they asked, and a modal appearing
+      // instantly costs nothing.
+      animationType={reducedMotion ? 'none' : 'fade'}
       onRequestClose={onCancel}
       accessibilityViewIsModal
       statusBarTranslucent

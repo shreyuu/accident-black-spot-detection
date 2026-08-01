@@ -18,6 +18,15 @@ export interface AppButtonProps {
   accessibilityLabel?: string;
   /** Screen-reader hint describing the outcome, e.g. "Opens your messaging app". */
   accessibilityHint?: string;
+  /**
+   * Marks the button as the chosen one in a set.
+   *
+   * Needed wherever a button group signals its selection by fill colour —
+   * the theme picker, the category filters. Without it the selection is
+   * carried by colour alone, which is exactly what this project forbids, and
+   * a screen-reader user hears three identical buttons.
+   */
+  selected?: boolean;
   testID?: string;
   style?: ViewStyle;
 }
@@ -41,6 +50,7 @@ export function AppButton({
   fullWidth = false,
   accessibilityLabel,
   accessibilityHint,
+  selected,
   testID,
   style,
 }: AppButtonProps) {
@@ -79,7 +89,11 @@ export function AppButton({
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
       {...(accessibilityHint === undefined ? {} : { accessibilityHint })}
-      accessibilityState={{ disabled: !isInteractive, busy: loading }}
+      accessibilityState={{
+        disabled: !isInteractive,
+        busy: loading,
+        ...(selected === undefined ? {} : { selected }),
+      }}
       testID={testID}
       // Extends the touchable area without growing the visual bounds.
       hitSlop={8}

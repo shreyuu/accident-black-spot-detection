@@ -3,6 +3,7 @@ import { Redirect, Tabs } from 'expo-router';
 import { StyleSheet } from 'react-native';
 
 import { LoadingIndicator, ScreenContainer } from '@/components';
+import { useBackgroundMonitoring } from '@/features/alerts/useBackgroundMonitoring';
 import { useAuth } from '@/features/auth/AuthProvider';
 import { useTheme } from '@/theme';
 
@@ -22,6 +23,13 @@ import { useTheme } from '@/theme';
 export default function TabsLayout() {
   const theme = useTheme();
   const { status } = useAuth();
+
+  // Mounted here purely for its reconciliation, so background monitoring is
+  // brought back in step on launch rather than only when Settings is opened —
+  // the gap Phase 8 left open. The return value is unused; the guard inside
+  // is module-level, so this instance and the Settings screen's cannot both
+  // act on the same decision.
+  useBackgroundMonitoring();
 
   if (status === 'restoring') {
     return (

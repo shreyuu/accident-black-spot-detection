@@ -37,6 +37,7 @@ import {
   type IncidentReportFormValues,
 } from '@/features/reports/reportSchemas';
 import { useInvalidateMyReports } from '@/features/reports/useMyReports';
+import { useDraftQueue } from '@/features/reports/useDraftQueue';
 import { useSubmitReport } from '@/features/reports/useSubmitReport';
 import { useTheme } from '@/theme';
 import {
@@ -154,7 +155,14 @@ function ReportForm({
   const invalidateMyReports = useInvalidateMyReports();
 
   const [images, setImages] = useState<SelectedImage[]>([]);
-  const { state, submit, cancel, reset } = useSubmitReport();
+  const { state, submit, cancel, reset, reservedReportId } = useSubmitReport();
+  const { enqueue } = useDraftQueue();
+
+  // What was actually sent, so saving a draft stores the attempt rather than
+  // whatever the form happens to hold later.
+  const [lastAttempted, setLastAttempted] = useState<IncidentReportFormValues | null>(null);
+  const [savingDraft, setSavingDraft] = useState(false);
+  const [savedAsDraft, setSavedAsDraft] = useState(false);
 
   const {
     control,
@@ -194,6 +202,10 @@ function ReportForm({
   }, []);
 
   const onSubmit = handleSubmit(async (values) => {
+    // Captured so a later "Save on my phone" stores exactly what was attempted,
+    // not whatever the form holds by then.
+    setLastAttempted(values);
+
     const outcome = await submit({
       reporterId,
       values,
@@ -206,9 +218,43 @@ function ReportForm({
     }
   });
 
+  /**
+   * Keep a failed report on the device.
+   *
+   * The reserved document id goes with it, so the queued retry writes to the
+   * same document a partially-completed attempt may already have created —
+   * the same "never file the incident twice" guarantee `useSubmitReport` makes
+   * within a session, extended across restarts.
+   */
+  const handleSaveDraft = useCallback(async (): Promise<void> => {
+    if (lastAttempted === null || state.status !== 'failed') {
+      return;
+    }
+
+    setSavingDraft(true);
+    try {
+      const reserved = reservedReportId();
+      await enqueue({
+        reporterId,
+        // Omitted rather than passed as null: the queue reserves its own id
+        // when there is none, and under exactOptionalPropertyTypes an
+        // explicit undefined is not the same as an absent property.
+        ...(reserved === null ? {} : { reportId: reserved }),
+        values: lastAttempted,
+        images,
+        error: { message: state.error.userMessage, retryable: state.error.retryable },
+      });
+      setSavedAsDraft(true);
+    } finally {
+      setSavingDraft(false);
+    }
+  }, [enqueue, images, lastAttempted, reporterId, reservedReportId, state]);
+
   const startAnother = () => {
     reset();
     setImages([]);
+    setLastAttempted(null);
+    setSavedAsDraft(false);
     resetForm({
       type: 'accident',
       severity: 'medium',
@@ -257,12 +303,36 @@ function ReportForm({
         </View>
 
         {state.status === 'failed' ? (
-          <ErrorState
-            error={state.error}
-            title="Your report was not submitted"
-            onRetry={() => void onSubmit()}
-            testID="report-submit-error"
-          />
+          <View style={{ gap: theme.spacing.sm }}>
+            <ErrorState
+              error={state.error}
+              title="Your report was not submitted"
+              onRetry={() => void onSubmit()}
+              testID="report-submit-error"
+            />
+
+            {/*
+              The reason drafts exist. Before this, a failure at the roadside —
+              which is where the signal is worst and where every report is
+              written — handed the user a "Try again" and lost their observation
+              entirely if they put the phone away. Saving it costs one tap and
+              nothing else can reconstruct it.
+            */}
+            <AppText variant="caption" color="textMuted">
+              You can save this on your phone instead and it will be sent automatically next time
+              you open the app with a connection.
+            </AppText>
+            <AppButton
+              label={savedAsDraft ? 'Saved on this phone' : 'Save on my phone'}
+              variant="secondary"
+              onPress={() => void handleSaveDraft()}
+              disabled={savedAsDraft}
+              loading={savingDraft}
+              fullWidth
+              accessibilityHint="Keeps this report on your device and sends it when a connection is available"
+              testID="report-save-draft"
+            />
+          </View>
         ) : null}
 
         <Controller

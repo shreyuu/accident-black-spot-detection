@@ -37,22 +37,30 @@ import { logger } from '@/utils/logger';
  * user can revoke "Always" in system Settings, or dismiss the Android
  * notification. Coming back to the app then stops the task.
  *
- * ## Where this is mounted, and what that does not cover
+ * ## Where this is mounted
  *
- * Only the Settings screen mounts it, which is enough for the cases that matter:
- * the OS keeps a registered location task across app restarts, so a task that is
- * running stays running without the app's help, and the background task itself
- * self-stops when it reads a snapshot saying the user has opted out.
+ * The tab layout mounts it, so reconciliation happens on launch, and the
+ * Settings screen mounts it again for its controls. Phase 11 closed the gap
+ * left by Phase 8: previously only Settings mounted it, so a task the OS had
+ * dropped — an Android reboot being the usual case, since there is no
+ * BOOT_COMPLETED receiver — did not resume until the user happened to open
+ * Settings.
  *
- * It does **not** cover re-registering a task the OS dropped on its own —
- * an Android reboot being the usual case, since there is no BOOT_COMPLETED
- * receiver. Background warnings then resume the next time the user opens
- * Settings, not the next time they open the app.
- *
- * TODO(phase-11): reconcile on launch rather than on screen mount, as part of
- * the app-wide preference sync. Doing it now would mean two live instances of
- * this hook racing to start the same task.
+ * Two live instances is exactly the race Phase 8 was wary of, so the guard
+ * below is **module-level rather than per-instance**: whichever mounts first
+ * performs the reconciliation and the other observes the result. A per-instance
+ * ref would have let both call `startBackgroundMonitoring` in the same tick.
  */
+
+/**
+ * Whether a reconciliation is in flight, **process-wide**.
+ *
+ * Not a ref, because the guard has to hold across every mounted instance of
+ * this hook — the tab layout's and the Settings screen's — not just within one.
+ * Written synchronously so a second effect running in the same tick sees it;
+ * `busy` is state and would not have been committed yet.
+ */
+let reconciling = false;
 
 interface MonitoringEnvironment {
   foregroundPermission: LocationPermissionStatus;
@@ -149,22 +157,12 @@ export function useBackgroundMonitoring(): UseBackgroundMonitoringResult {
     [environment, profile, user],
   );
 
-  /**
-   * Apply the decision.
-   *
-   * Guarded by a ref rather than by `busy`: `busy` is state and a second effect
-   * run can observe it before React has committed the update, whereas the ref is
-   * written synchronously. Without it, two starts can overlap and the second
-   * fails with the task already registered.
-   */
-  const reconcilingRef = useRef(false);
-
   useEffect(() => {
-    if (decision.action === 'none' || reconcilingRef.current) {
+    if (decision.action === 'none' || reconciling) {
       return;
     }
 
-    reconcilingRef.current = true;
+    reconciling = true;
     void (async () => {
       try {
         if (decision.action === 'start') {
@@ -185,7 +183,7 @@ export function useBackgroundMonitoring(): UseBackgroundMonitoringResult {
         // a stale `taskRunning` would retry the same doomed action forever.
         await syncEnvironment();
       } finally {
-        reconcilingRef.current = false;
+        reconciling = false;
       }
     })();
   }, [decision.action, syncEnvironment]);
