@@ -14,7 +14,7 @@ alerts, supports incident reporting, and provides emergency SOS assistance.
 
 ## Build status
 
-This project is being built in phases. **Phase 8 of 15 is complete.**
+This project is being built in phases. **Phase 9 of 15 is complete.**
 
 | Phase | Scope                                    | Status                    |
 | ----- | ---------------------------------------- | ------------------------- |
@@ -27,7 +27,7 @@ This project is being built in phases. **Phase 8 of 15 is complete.**
 | 6     | Emergency contacts and SOS               | ✅ Complete               |
 | 7     | Admin dashboard and moderation           | ✅ Complete               |
 | 8     | Background location and notifications    | ✅ Complete (see caveat‡) |
-| 9     | Nearby facilities                        | ⬜ Not started            |
+| 9     | Nearby facilities                        | ✅ Complete               |
 | 10    | Spatial clustering, ECLAT, risk scoring  | ⬜ Not started            |
 | 11    | Settings, offline support, accessibility | ⬜ Not started            |
 | 12    | Security, privacy, abuse prevention      | ⬜ Not started            |
@@ -79,8 +79,17 @@ suspend the task outright, and both the disclosure and the Settings copy say so.
 produce a development build, because a custom background task and `expo-notifications` need native
 modules Expo Go cannot provide.
 
-**What does not work yet:** no nearby facilities, no analytics service. Those screens exist as
-labelled placeholders.
+**Nearby help now works** — hospitals and police stations around you, reached from the SOS screen,
+sorted by distance, each with directions that hand off to your maps app and a call button when a
+number is published. It works **with no API key**: lookups go to OpenStreetMap's Overpass API by
+default, because a mobile app cannot hold a secret and the honest answer to "secure keys" is to not
+need one. A Google Places provider sits behind the same interface and switches on only if you
+configure a key, with OpenStreetMap as the automatic fallback. If every provider fails, the last
+result saved on the device is shown and clearly labelled as saved. The screen states plainly that
+distances are straight-line, that opening hours are usually unknown, and that the app cannot contact
+anyone for you. See [`docs/nearby-places.md`](docs/nearby-places.md).
+
+**What does not work yet:** no analytics service. That screen exists as a labelled placeholder.
 
 > **‡ The Android development build compiles; the iOS one has not been built on this machine.** The
 > Android debug APK builds clean and carries `ACCESS_BACKGROUND_LOCATION`, `FOREGROUND_SERVICE` and
@@ -130,7 +139,8 @@ accident-black-spot-detection/
 │       │   ├── components/   # Reusable UI, no data access
 │       │   ├── config/       # Validated environment configuration
 │       │   ├── constants/    # Safety disclaimers and app constants
-│       │   ├── features/     # auth, location, black-spots, alerts, reports, sos
+│       │   ├── features/     # auth, location, black-spots, alerts, reports, sos,
+│       │   │                 #   emergency-contacts, nearby-places
 │       │   ├── providers/    # App-wide React providers
 │       │   ├── services/     # Firebase init and repositories
 │       │   ├── theme/        # Design tokens, light/dark themes
@@ -371,8 +381,26 @@ npm run format
   when the Settings screen is mounted, not at app launch, so on Android — where there is no
   `BOOT_COMPLETED` receiver — warnings resume the next time Settings is opened. Moving it to launch
   is Phase 11 work, marked `TODO(phase-11)` in `useBackgroundMonitoring.ts`.
+- **Nearby facility data is crowd-sourced, uneven, and sometimes simply wrong.** The default
+  provider is OpenStreetMap, whose coverage is excellent in much of Europe and patchy elsewhere. A
+  facility may be closed, moved, or absent from the map entirely — and records are occasionally
+  **miscategorised** by whoever entered them. A live central-London query returned a cosmetic clinic
+  tagged `amenity=hospital`; nothing client-side can detect that, and no filtering was added to
+  pretend otherwise. The screen says the list is a starting point, not a directory.
+- **Opening hours are almost always unknown**, and are shown as unknown rather than guessed. Only a
+  literal `24/7` tag is reported as always open, and nothing is ever reported as closed.
+- **Nearby lookups go to a free public Overpass endpoint**, which throttles under load. That is why
+  the provider chain and the offline cache exist. A self-hosted or paid instance is Phase 14 work,
+  marked `TODO(phase-14)`.
+- **A Google Places key, if you set one, is not a secret.** It ships inside the bundle like every
+  other `EXPO_PUBLIC_*` value and must be restricted by application and API, with a quota cap. A
+  server-side proxy is the private option and is Phase 12 work. The default configuration sets no
+  key at all.
+- **Straight-line distances.** A hospital 2 km away across a river may be a 15 km drive. Stated on
+  the screen rather than implied away.
 - **No location history is stored.** Alert logs deliberately record the black spot and distance but
-  **not** coordinates, and the offline cache rounds the stored centre to roughly 1 km.
+  **not** coordinates, and both offline caches round the stored centre to roughly 1 km. Positions
+  sent to a place provider are rounded to five decimal places.
 - **Demo black spots are seeded, not real.** `npm run seed` writes a small demo dataset to the
   emulator, including one unverified and one inactive record that must never appear in the app.
 - **Emulators only so far.** Authentication and Firestore have been exercised against the local
