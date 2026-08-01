@@ -79,6 +79,10 @@ function RootNavigator() {
           name="emergency-contacts/index"
           options={{ title: 'Emergency contacts', headerBackTitle: 'Back' }}
         />
+        <Stack.Screen
+          name="nearby/index"
+          options={{ title: 'Nearby help', headerBackTitle: 'Back' }}
+        />
         <Stack.Screen name="+not-found" options={{ title: 'Not found' }} />
       </Stack>
     </>

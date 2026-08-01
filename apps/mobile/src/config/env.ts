@@ -60,6 +60,21 @@ const envSchema = z
 
     googleMapsApiKeyAndroid: z.string().trim().optional(),
     googleMapsApiKeyIos: z.string().trim().optional(),
+
+    /**
+     * Optional. Enables the Google Places provider for nearby facilities.
+     *
+     * Left unset, the app uses OpenStreetMap, which needs no credential at all —
+     * see `googlePlacesProvider` for why that is the default and for what has to
+     * be true of this key if you do set one. Like every `EXPO_PUBLIC_*` value it
+     * ships inside the bundle, so it must be restricted by application and API
+     * in the Google Cloud console; it is billable configuration, not a secret.
+     */
+    googlePlacesApiKey: z
+      .string()
+      .trim()
+      .optional()
+      .transform((value) => (value === '' ? undefined : value)),
   })
   /**
    * Firebase config is all-or-nothing. A partially filled block is the worst
@@ -113,6 +128,7 @@ function parseEnv(): Env {
 
     googleMapsApiKeyAndroid: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY_ANDROID,
     googleMapsApiKeyIos: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY_IOS,
+    googlePlacesApiKey: process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY,
   });
 
   if (!result.success) {

@@ -352,6 +352,28 @@ export default function SosScreen() {
         </View>
 
         {/* ------------------------------------------------------------------ */}
+        {/*
+          Below the SOS controls on purpose. Someone who opened this screen came
+          to reach a person they know; a list of hospitals is the next thing to
+          try, not a competing first option.
+        */}
+        <View style={{ gap: theme.spacing.sm }}>
+          <AppText variant="titleSmall">Nearby help</AppText>
+          <AppText variant="caption" color="textSubtle">
+            Hospitals and police stations near you, from public map data. This app cannot contact
+            them for you.
+          </AppText>
+          <AppButton
+            label="Find nearby help"
+            variant="secondary"
+            onPress={() => router.push('/nearby')}
+            fullWidth
+            accessibilityHint="Opens a list of hospitals and police stations near your location"
+            testID="sos-nearby-help"
+          />
+        </View>
+
+        {/* ------------------------------------------------------------------ */}
         <View style={{ gap: theme.spacing.sm }}>
           <AppText variant="caption" color="textSubtle">
             {SOS_DELIVERY_DISCLAIMER}
