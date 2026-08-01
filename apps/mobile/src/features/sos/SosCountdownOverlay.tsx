@@ -3,6 +3,7 @@ import { Modal, StyleSheet, View } from 'react-native';
 import { AppButton, AppText } from '@/components';
 import { SOS_COUNTDOWN_HINT } from '@/features/sos/sosCopy';
 import { useTheme } from '@/theme';
+import { useReducedMotion } from '@/utils/useReducedMotion';
 
 export interface SosCountdownOverlayProps {
   visible: boolean;
@@ -31,12 +32,17 @@ export function SosCountdownOverlay({
   onCancel,
 }: SosCountdownOverlayProps) {
   const theme = useTheme();
+  const reducedMotion = useReducedMotion();
 
   return (
     <Modal
       visible={visible}
       transparent
-      animationType="fade"
+      // The app has no sliding, scaling or parallax animation anywhere — this
+      // fade is the only animation it has. It is still switched off when the
+      // user has asked for reduced motion: they asked, and a modal appearing
+      // instantly costs nothing.
+      animationType={reducedMotion ? 'none' : 'fade'}
       onRequestClose={onCancel}
       accessibilityViewIsModal
       statusBarTranslucent

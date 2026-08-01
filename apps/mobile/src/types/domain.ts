@@ -195,8 +195,13 @@ export {
  * client write to the field — that is what stops the reporting flow from
  * becoming a way to publish unverified warnings.
  *
- * TODO(phase-11): `draft` is part of the agreed model but nothing writes it yet;
- * local drafts for reports composed offline are Phase 11 work.
+ * `draft` is still never written **to Firestore**, and deliberately so. Phase 11
+ * added offline drafts, but they live entirely on the device in `draftStore` and
+ * are deleted the moment they submit successfully — a report reaches Firestore
+ * as `pending` or not at all. Uploading half-finished reports would put unsent
+ * observations in front of moderators and store personal data the user has not
+ * chosen to send. The value stays in the vocabulary because the rules and the
+ * dashboard both enumerate it.
  */
 export { REPORT_STATUSES, type ReportStatus } from '@accident-black-spot-detection/shared-types';
 

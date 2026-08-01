@@ -19,27 +19,28 @@ import { BackgroundMonitoringDisclosure } from '@/features/alerts/BackgroundMoni
 import { useBackgroundMonitoring } from '@/features/alerts/useBackgroundMonitoring';
 import { useAuth } from '@/features/auth/AuthProvider';
 import { logout } from '@/features/auth/authService';
+import { AlertRadiusPicker } from '@/features/settings/AlertRadiusPicker';
+import { usePreferences } from '@/features/settings/usePreferences';
 import { useTheme, useThemePreference, type ThemePreference } from '@/theme';
 import { toAppError, type AppError } from '@/utils/errors';
 
-const PREFERENCES: readonly { value: ThemePreference; label: string }[] = [
+const THEME_OPTIONS: readonly { value: ThemePreference; label: string }[] = [
   { value: 'system', label: 'System' },
   { value: 'light', label: 'Light' },
   { value: 'dark', label: 'Dark' },
 ];
 
 /**
- * Settings screen — partial.
+ * Settings screen.
  *
- * Phase 2 adds the account section: the signed-in identity and sign-out. The
- * theme switcher remains in-memory; persisting preferences to the profile
- * document, along with alert radius, sound, haptics and background monitoring,
- * is Phase 11.
+ * Phase 11 made every preference here persistent — saved to the account and
+ * mirrored locally, so a choice survives a restart and applies with no signal.
+ * Each section is its own component so the hook that owns its state sits next
+ * to the controls that change it.
  */
 export default function SettingsScreen() {
   const theme = useTheme();
   const router = useRouter();
-  const { preference, setPreference } = useThemePreference();
   const { user, profile, profileError, refreshProfile } = useAuth();
 
   const [confirmSignOut, setConfirmSignOut] = useState(false);
@@ -110,28 +111,7 @@ export default function SettingsScreen() {
         </View>
 
         {/* ---------------------------------------------------------------- */}
-        <View style={{ gap: theme.spacing.sm }}>
-          <AppText variant="titleSmall">Appearance</AppText>
-          <AppText variant="caption" color="textSubtle">
-            Not saved yet — persistence arrives in Phase 11.
-          </AppText>
-
-          <View style={{ flexDirection: 'row', gap: theme.spacing.sm }}>
-            {PREFERENCES.map((option) => (
-              <AppButton
-                key={option.value}
-                label={option.label}
-                onPress={() => setPreference(option.value)}
-                variant={preference === option.value ? 'primary' : 'secondary'}
-                accessibilityLabel={`${option.label} theme`}
-                accessibilityHint={
-                  preference === option.value ? 'Currently selected' : 'Switches the app theme'
-                }
-                style={styles.themeButton}
-              />
-            ))}
-          </View>
-        </View>
+        <AppearanceSection />
 
         {/* ---------------------------------------------------------------- */}
         <View style={{ gap: theme.spacing.sm }}>
@@ -149,15 +129,7 @@ export default function SettingsScreen() {
         </View>
 
         {/* ---------------------------------------------------------------- */}
-        <View style={{ gap: theme.spacing.sm }}>
-          <AppText variant="titleSmall">Alerts</AppText>
-          <AppText variant="bodySmall" color="textMuted">
-            Warning radius: {profile?.alertRadiusM ?? env.defaultAlertRadiusM} m
-          </AppText>
-          <AppText variant="caption" color="textSubtle">
-            An adjustable radius, alert sound and haptics arrive in Phase 11.
-          </AppText>
-        </View>
+        <AlertsSection />
 
         {/* ---------------------------------------------------------------- */}
         <BackgroundMonitoringSection />
@@ -199,6 +171,136 @@ export default function SettingsScreen() {
         testID="sign-out-dialog"
       />
     </ScreenContainer>
+  );
+}
+
+/**
+ * Theme choice, now persisted.
+ *
+ * Two stores are written, not one. `usePreferences` records the choice on the
+ * account and in the local mirror; `setPreference` applies it to the live theme
+ * immediately. The theme provider sits *above* `AuthProvider` — it has to, so
+ * the app is themed before there is a session — so it cannot read preferences
+ * through this hook, and hydrates from the same local store on launch instead.
+ */
+function AppearanceSection() {
+  const theme = useTheme();
+  const { preference, setPreference } = useThemePreference();
+  const { preferences, update, saving } = usePreferences();
+
+  // The live theme is what the user sees, so it wins if the two ever disagree —
+  // which happens for a frame after launch, before hydration completes.
+  const selected = preference;
+
+  function choose(next: ThemePreference): void {
+    setPreference(next);
+    void update({ darkModePreference: next });
+  }
+
+  return (
+    <View style={{ gap: theme.spacing.sm }}>
+      <AppText variant="titleSmall">Appearance</AppText>
+
+      <View style={{ flexDirection: 'row', gap: theme.spacing.sm }}>
+        {THEME_OPTIONS.map((option) => {
+          const isSelected = selected === option.value;
+          return (
+            <AppButton
+              key={option.value}
+              label={option.label}
+              onPress={() => choose(option.value)}
+              variant={isSelected ? 'primary' : 'secondary'}
+              disabled={saving}
+              accessibilityLabel={`${option.label} theme`}
+              selected={isSelected}
+              accessibilityHint={
+                isSelected ? 'Currently selected' : 'Switches the app theme and saves it'
+              }
+              style={styles.themeButton}
+            />
+          );
+        })}
+      </View>
+
+      {preferences.darkModePreference !== selected ? (
+        <AppText variant="caption" color="textSubtle">
+          Saving your choice…
+        </AppText>
+      ) : null}
+    </View>
+  );
+}
+
+/**
+ * Alert behaviour: how far ahead, and through which channels.
+ *
+ * Every control here changes whether or how the user is warned, so each one
+ * says what switching it off actually costs rather than being a bare toggle.
+ * The in-app banner is deliberately not switchable: it is the one channel that
+ * always works, and an app whose warnings can be turned off entirely while
+ * still appearing to run would be worse than one that says so.
+ */
+function AlertsSection() {
+  const theme = useTheme();
+  const { preferences, update, saving, syncError, ready } = usePreferences();
+
+  return (
+    <View style={{ gap: theme.spacing.md }}>
+      <AppText variant="titleSmall">Alerts</AppText>
+
+      <View style={{ gap: theme.spacing.xs }}>
+        <AppText variant="label" color="textMuted">
+          Warn me this far ahead
+        </AppText>
+        <AlertRadiusPicker
+          value={preferences.alertRadiusM}
+          onChange={(metres) => void update({ alertRadiusM: metres })}
+          disabled={!ready || saving}
+        />
+      </View>
+
+      <AppSwitch
+        value={preferences.alertsEnabled}
+        onValueChange={(next) => void update({ alertsEnabled: next })}
+        label="Warn me about black spots"
+        description="Turning this off stops all proximity warnings, including background ones."
+        disabled={!ready || saving}
+        testID="alerts-enabled-switch"
+      />
+
+      <AppSwitch
+        value={preferences.soundEnabled}
+        onValueChange={(next) => void update({ soundEnabled: next })}
+        label="Play a sound"
+        description="Only affects the notification. Your phone's silent switch still applies."
+        disabled={!ready || saving || !preferences.alertsEnabled}
+        testID="sound-enabled-switch"
+      />
+
+      <AppSwitch
+        value={preferences.hapticsEnabled}
+        onValueChange={(next) => void update({ hapticsEnabled: next })}
+        label="Vibrate"
+        description="Not every device has a vibration motor."
+        disabled={!ready || saving || !preferences.alertsEnabled}
+        testID="haptics-enabled-switch"
+      />
+
+      <AppText variant="caption" color="textSubtle">
+        The on-screen warning cannot be switched off. It is the only channel that always works.
+      </AppText>
+
+      {/*
+        A sync failure does not revert the setting — it is applied locally and
+        the user keeps it. What they must not be left believing is that it
+        reached their account, so it is said plainly.
+      */}
+      {syncError !== null ? (
+        <AppText variant="caption" color="danger">
+          Saved on this device, but not to your account yet. It will sync when you are back online.
+        </AppText>
+      ) : null}
+    </View>
   );
 }
 

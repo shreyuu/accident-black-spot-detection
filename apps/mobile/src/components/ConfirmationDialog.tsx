@@ -3,6 +3,7 @@ import { Modal, Pressable, StyleSheet, View } from 'react-native';
 import { AppButton } from '@/components/AppButton';
 import { AppText } from '@/components/AppText';
 import { useTheme } from '@/theme';
+import { useReducedMotion } from '@/utils/useReducedMotion';
 
 export interface ConfirmationDialogProps {
   visible: boolean;
@@ -42,12 +43,17 @@ export function ConfirmationDialog({
   testID,
 }: ConfirmationDialogProps) {
   const theme = useTheme();
+  const reducedMotion = useReducedMotion();
 
   return (
     <Modal
       visible={visible}
       transparent
-      animationType="fade"
+      // The app has no sliding, scaling or parallax animation anywhere — this
+      // fade is the only animation it has. It is still switched off when the
+      // user has asked for reduced motion: they asked, and a modal appearing
+      // instantly costs nothing.
+      animationType={reducedMotion ? 'none' : 'fade'}
       onRequestClose={onCancel}
       accessibilityViewIsModal
       statusBarTranslucent

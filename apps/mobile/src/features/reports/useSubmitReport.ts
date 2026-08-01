@@ -66,6 +66,15 @@ export interface UseSubmitReportResult {
   cancel: () => void;
   /** Clears the result and releases the reserved id, ready for a new report. */
   reset: () => void;
+  /**
+   * The document id reserved for this submission, or null before one is.
+   *
+   * Exposed so a failed attempt can be saved as a draft carrying the same id.
+   * That extends the "never file the incident twice" guarantee across a
+   * restart: the queued retry writes to the document a partially-completed
+   * attempt may already have created, rather than a second one.
+   */
+  reservedReportId: () => string | null;
 }
 
 export function useSubmitReport(): UseSubmitReportResult {
@@ -170,5 +179,7 @@ export function useSubmitReport(): UseSubmitReportResult {
     setState({ status: 'idle' });
   }, []);
 
-  return { state, submit, cancel, reset };
+  const reservedReportId = useCallback((): string | null => reportIdRef.current, []);
+
+  return { state, submit, cancel, reset, reservedReportId };
 }

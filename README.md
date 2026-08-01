@@ -14,7 +14,7 @@ alerts, supports incident reporting, and provides emergency SOS assistance.
 
 ## Build status
 
-This project is being built in phases. **Phase 10 of 15 is complete.**
+This project is being built in phases. **Phase 11 of 15 is complete.**
 
 | Phase | Scope                                    | Status                    |
 | ----- | ---------------------------------------- | ------------------------- |
@@ -29,7 +29,7 @@ This project is being built in phases. **Phase 10 of 15 is complete.**
 | 8     | Background location and notifications    | ✅ Complete (see caveat‡) |
 | 9     | Nearby facilities                        | ✅ Complete               |
 | 10    | Spatial clustering, ECLAT, risk scoring  | ✅ Complete               |
-| 11    | Settings, offline support, accessibility | ⬜ Not started            |
+| 11    | Settings, offline support, accessibility | ✅ Complete               |
 | 12    | Security, privacy, abuse prevention      | ⬜ Not started            |
 | 13    | Testing and QA                           | ⬜ Not started            |
 | 14    | CI/CD, builds, release preparation       | ⬜ Not started            |
@@ -88,6 +88,23 @@ configure a key, with OpenStreetMap as the automatic fallback. If every provider
 result saved on the device is shown and clearly labelled as saved. The screen states plainly that
 distances are straight-line, that opening hours are usually unknown, and that the app cannot contact
 anyone for you. See [`docs/nearby-places.md`](docs/nearby-places.md).
+
+**Settings are now real and they persist.** Alert distance (100–2000 m in named steps), alerts,
+sound, haptics, background monitoring and theme are saved to the account **and** mirrored locally, so
+a choice survives a restart and applies with no signal. A setting that cannot reach the account is
+kept and applied anyway — and the app says so rather than pretending it synced.
+
+**A report written with no signal is no longer lost.** A failed submission can be saved on the phone
+and is sent automatically the next time the app is opened with a connection, retrying with backoff
+and giving up gracefully rather than for ever. A draft carries the reserved document id, so a retry
+after a restart cannot file the same incident twice. Drafts are never presented as submitted
+reports, and are cleared on sign-out. See
+[`docs/settings-and-offline.md`](docs/settings-and-offline.md).
+
+**Contrast is now measured rather than reviewed, and it found two real failures** — white text on
+the dark-mode primary fill (4.04:1) and on the SOS button (3.61:1), both below WCAG AA. The dark
+theme now uses light accents with dark text on them, measuring 7.44:1 and 6.80:1. Every token pair,
+including pressed states, is asserted in the test suite.
 
 **The analytics service now exists** (`services/analytics`, FastAPI + Python). It reads approved
 reports, cleans and de-duplicates them, clusters them with DBSCAN on the haversine metric, mines
@@ -344,7 +361,7 @@ npm run format
 
 ## Known limitations
 
-- **Feature work is incomplete by design.** Only Phases 0–10 are done; see the table above.
+- **Feature work is incomplete by design.** Only Phases 0–11 are done; see the table above.
 - **The dashboard signs an operator out after an hour.** The session cookie holds a Firebase ID
   token rather than a proper session cookie, and Firebase expires those after an hour. Signing in
   again restores it. Swapping to `createSessionCookie`, which also makes a role change take effect
@@ -394,10 +411,9 @@ npm run format
   unused background modes, so it is flagged for Phase 14.
 - **Dismissing the Android notification stops background warnings.** `killServiceOnDestroy` is on
   deliberately: a user must be able to stop location tracking without opening the app.
-- **Background monitoring may not resume by itself after a device reboot.** The reconciliation runs
-  when the Settings screen is mounted, not at app launch, so on Android — where there is no
-  `BOOT_COMPLETED` receiver — warnings resume the next time Settings is opened. Moving it to launch
-  is Phase 11 work, marked `TODO(phase-11)` in `useBackgroundMonitoring.ts`.
+- **Background monitoring resumes on launch, not on reboot.** Phase 11 moved the reconciliation to
+  the tab layout, so opening the app re-registers a task the OS dropped. Android still has no
+  `BOOT_COMPLETED` receiver, so between a reboot and the next launch there is no monitoring.
 - **Nearby facility data is crowd-sourced, uneven, and sometimes simply wrong.** The default
   provider is OpenStreetMap, whose coverage is excellent in much of Europe and patchy elsewhere. A
   facility may be closed, moved, or absent from the map entirely — and records are occasionally
@@ -440,8 +456,6 @@ npm run format
   verification is a Phase 12 decision.
 - **No rate limiting on registration.** Firebase applies its own throttling, but application-level
   abuse prevention is Phase 12.
-- **Theme preference is not persisted.** Switching theme in Settings works but resets on relaunch.
-  Persistence lands in Phase 11.
 - **Rules tests cover Phase 7's role model, not the whole rule set.** `npm run test:rules` exercises
   ownership and role enforcement against the emulator; a full review of every collection is Phase 12.
 - **Icons and splash artwork are placeholders** carried from the Expo template. Real branding is
