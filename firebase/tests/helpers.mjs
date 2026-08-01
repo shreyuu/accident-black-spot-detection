@@ -165,3 +165,53 @@ export function contactFixture(overrides = {}) {
     ...overrides,
   };
 }
+
+/**
+ * A Phase 10 analytics candidate.
+ *
+ * Note what is **absent**: no `verified` and no `active`. Those belong to
+ * `blackSpots` and are exactly what the mobile app's query requires, so their
+ * absence is what stops a candidate satisfying that query even if one were
+ * somehow copied across. The shape is part of the safety argument, not an
+ * oversight — see `candidates.test.mjs`.
+ */
+export function candidateFixture(overrides = {}) {
+  return {
+    latitude: 51.5074,
+    longitude: -0.1278,
+    geohash: 'gcpvj0duq5',
+    radiusM: 300,
+    riskLevel: 'high',
+    severityScore: 72,
+    scoreComponents: { corroboration: 0.67, severity: 0.6, volume: 0.4, recency: 0.99 },
+    category: 'accident',
+    source: 'algorithm',
+    reportIds: ['report-1', 'report-2', 'report-3'],
+    reportCount: 3,
+    distinctReporters: 3,
+    patterns: ['incident type accident and time of day night — in 75% of reports here'],
+    algorithmVersion: '1.0.0',
+    jobId: 'job-1',
+    status: 'proposed',
+    createdAt: NOW,
+    ...overrides,
+  };
+}
+
+export function analysisJobFixture(overrides = {}) {
+  return {
+    id: 'job-1',
+    startedAt: NOW,
+    finishedAt: NOW,
+    algorithmVersion: '1.0.0',
+    reportsIngested: 42,
+    reportsAfterCleaning: 38,
+    duplicatesRemoved: 4,
+    clustersFound: 3,
+    candidatesWritten: 3,
+    parameters: { eps_m: 150, min_samples: 3, min_support: 0.5 },
+    status: 'completed',
+    error: null,
+    ...overrides,
+  };
+}

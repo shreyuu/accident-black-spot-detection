@@ -20,6 +20,7 @@
     "emulators": "firebase emulators:start --only auth,firestore,storage",
     "emulators:persist": "firebase emulators:start --only auth,firestore,storage --import=.firebase-data --export-on-exit=.firebase-data",
     "seed": "node firebase/seed/seedBlackSpots.mjs",
+    "seed:reports": "node firebase/seed/seedIncidentReports.mjs",
     "lint": "npm run lint --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
@@ -29,7 +30,11 @@
     "grant-role": "node firebase/scripts/grantRole.mjs",
     "test:rules": "npm run test:rules --workspace @accident-black-spot-detection/firebase",
     "admin": "npm run dev --workspace @accident-black-spot-detection/admin",
-    "verify:all": "npm run verify && npm run test:rules"
+    "analytics": "cd services/analytics && uv run uvicorn app.main:app --reload --port 8000",
+    "analytics:test": "cd services/analytics && uv run pytest",
+    "analytics:lint": "cd services/analytics && uv run ruff check . && uv run ruff format --check . && uv run mypy app",
+    "analytics:verify": "npm run analytics:lint && npm run analytics:test",
+    "verify:all": "npm run verify && npm run analytics:verify && npm run test:rules"
   },
   "devDependencies": {
     "prettier": "^3.9.6"
