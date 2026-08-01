@@ -366,6 +366,56 @@ service cloud.firestore {
     }
 
     // -------------------------------------------------------------------------
+    // blackSpotCandidates/{candidateId}
+    // -------------------------------------------------------------------------
+    // Black spots *proposed* by the Phase 10 analytics service. Proposals, not
+    // warnings.
+    //
+    // This is the collection where the project's central rule is enforced: an
+    // algorithm must never be able to put a hazard warning in front of users on
+    // its own. Three things hold that line, and none of them relies on a client
+    // behaving:
+    //
+    //   1. **The mobile app cannot read this collection at all.** Not "reads it
+    //      and filters" — cannot read it. A bug in the app's query therefore
+    //      cannot surface a candidate, because there is no query that succeeds.
+    //   2. **No client may write here**, whatever their role. Candidates are
+    //      written by the analytics service through the Admin SDK, which
+    //      bypasses these rules; a client with a stolen moderator token still
+    //      cannot manufacture one.
+    //   3. **A candidate is a different shape from a black spot.** It carries no
+    //      `verified` and no `active` field, so it could not satisfy the app's
+    //      `verified == true && active == true` query even if it were somehow
+    //      copied across.
+    //
+    // Publishing means an administrator creating a document in `blackSpots` —
+    // a separate, deliberate, audited act, and one this collection cannot cause.
+    match /blackSpotCandidates/{candidateId} {
+      // Moderators as well as admins: the queue is reviewed by moderators, and
+      // a proposal only an admin can see is a proposal nobody reviews.
+      allow get, list: if isModerator();
+      allow write: if false;
+    }
+
+    // -------------------------------------------------------------------------
+    // analysisJobs/{jobId}
+    // -------------------------------------------------------------------------
+    // Metadata for each analytics run: what was ingested, what parameters were
+    // used, which algorithm version produced the result.
+    //
+    // Readable by moderators so a candidate can be traced back to the run that
+    // proposed it — a moderator asked to trust a score is entitled to know which
+    // version of the algorithm produced it. Not readable by ordinary users: the
+    // counts describe the shape of the whole report corpus, including how many
+    // reports were rejected, which is not public information.
+    //
+    // Written only by the analytics service through the Admin SDK.
+    match /analysisJobs/{jobId} {
+      allow get, list: if isModerator();
+      allow write: if false;
+    }
+
+    // -------------------------------------------------------------------------
     // Everything else: denied until a phase adds an explicit rule.
     // -------------------------------------------------------------------------
     match /{document=**} {
