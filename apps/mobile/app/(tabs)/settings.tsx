@@ -136,6 +136,21 @@ export default function SettingsScreen() {
 
         {/* ---------------------------------------------------------------- */}
         <View style={{ gap: theme.spacing.sm }}>
+          <AppText variant="titleSmall">Your data</AppText>
+          <AppText variant="bodySmall" color="textMuted">
+            Download a copy of everything held about you, or delete your account.
+          </AppText>
+          <AppButton
+            label="Your data"
+            variant="secondary"
+            onPress={() => router.push('/account/data')}
+            fullWidth
+            accessibilityHint="Opens data export and account deletion"
+          />
+        </View>
+
+        {/* ---------------------------------------------------------------- */}
+        <View style={{ gap: theme.spacing.sm }}>
           <AppText variant="titleSmall">About</AppText>
           <AppText variant="bodySmall" color="textMuted">
             Version {Constants.expoConfig?.version ?? 'unknown'} · {env.appEnv}

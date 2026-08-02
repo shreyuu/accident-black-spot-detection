@@ -16,3 +16,4 @@ export * from './roles.ts';
 export * from './vocabulary.ts';
 export * from './moderation.ts';
 export * from './audit.ts';
+export * from './reportLimits.ts';

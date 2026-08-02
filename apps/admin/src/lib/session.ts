@@ -28,17 +28,18 @@ import { getAdminAuth } from '@/lib/firebaseAdmin';
  * The profile document keeps a copy for display. If the two disagree, the claim
  * wins and the document is simply wrong — which grants nothing.
  *
- * ## Why this is an ID token and not a Firebase session cookie
+ * ## Why this is a session cookie and not an ID token (Phase 12)
  *
- * `createSessionCookie` is the better long-term answer: it produces a
- * long-lived, revocable credential. It is not used yet, so the cookie here holds
- * the ID token itself, which Firebase expires after an hour. The dashboard
- * therefore signs the operator out after at most an hour of use — the login page
- * re-mints it silently if the browser still holds a Firebase session, so in
- * practice this shows up as a redirect rather than a lost session.
+ * The cookie holds a Firebase **session cookie**, minted by `createSessionCookie`
+ * in `app/api/session/route.ts`. Until Phase 12 it held the raw ID token, which
+ * expired after an hour and — the part that mattered — could not be revoked:
+ * demoting or disabling a moderator left their existing token working until it
+ * happened to expire. For an account withdrawn *because* of what it was doing,
+ * that hour was the whole problem.
  *
- * TODO(phase-12): swap to `createSessionCookie` with revocation on role change,
- * so demoting a moderator takes effect immediately instead of within the hour.
+ * `verifySessionCookie(cookie, true)` below re-checks revocation on every
+ * request, and `grantRole` revokes as part of every role change, so a demotion
+ * takes effect on the demoted operator's next click.
  */
 
 export const SESSION_COOKIE = 'abs_admin_session';
@@ -86,9 +87,11 @@ export async function getActor(): Promise<Actor | null> {
   }
 
   try {
-    // `checkRevoked` costs a lookup but means a disabled account loses access at
-    // once rather than when its token happens to expire.
-    const decoded = await getAdminAuth().verifyIdToken(token, true);
+    // `checkRevoked` costs a lookup on every request, and it is the point: it is
+    // what turns "this cookie was valid when it was issued" into "this operator
+    // still has access right now". Without it a revoked session keeps working
+    // until the cookie's own expiry.
+    const decoded = await getAdminAuth().verifySessionCookie(token, true);
     const role = isUserRole(decoded.role) ? decoded.role : 'user';
     const email = typeof decoded.email === 'string' ? decoded.email : '';
 

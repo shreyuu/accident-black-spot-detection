@@ -27,10 +27,16 @@ GoogleService-Info.plist
 **/serviceAccountKey.json
 **/*-firebase-adminsdk-*.json
 
-# Environment files. Only .env.example is tracked.
+# Environment files. Only the *.example templates are tracked.
+#
+# The negations are not decoration. `.env.*` matches `.env.local.example` too,
+# so without the second exception `apps/admin/.env.local.example` is silently
+# excluded from the repository — which it was until Phase 12, meaning a fresh
+# clone could not follow the documented setup step that copies it.
 .env
 .env.*
 !.env.example
+!.env.*.example
 
 # Metro
 .metro-health-check*
@@ -59,6 +65,13 @@ venv/
 # Next.js (apps/admin)
 .next/
 out/
+
+# Cloud Functions (functions/). `lib/` is the tsc emit — regenerate, never commit.
+functions/lib/
+# Local values for `defineSecret` params, read by the functions emulator.
+# The real values live in Secret Manager. Never commit these.
+**/.secret.local
+.runtimeconfig.json
 
 # Editors and OS
 .DS_Store

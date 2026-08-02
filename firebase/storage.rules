@@ -86,9 +86,11 @@ service firebase.storage {
       // Client-side deletion is refused for the same reason the report document
       // cannot be deleted: it would break the evidence trail behind a published
       // warning.
-      // TODO(phase-12): a scheduled Cloud Function sweeps objects that no report
-      // references — abandoned uploads — and cascades deletion when an account
-      // is removed.
+      //
+      // Deletion happens only through the Admin SDK, in two places, both added
+      // in Phase 12: `deleteAccount` erases a user's objects by prefix when they
+      // delete their account, and `sweepOrphanedImages` collects uploads that no
+      // report references. Neither is reachable from a client.
       allow delete: if false;
     }
 

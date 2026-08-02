@@ -3,13 +3,51 @@ rules_version = '2';
 // =============================================================================
 // Firestore security rules
 // =============================================================================
-// Scope: Phase 2 covers the `users` collection only. Collections introduced by
-// later phases (blackSpots, incidentReports, emergencyContacts, alertLogs,
-// adminAuditLogs, …) are added by the phase that creates them, and the complete
-// hardened rule set is reviewed in Phase 12.
+// Reviewed end to end in Phase 12. Every collection named in `COLLECTIONS`
+// (packages/shared-types/src/vocabulary.ts) has a block below, and
+// `tests/coverage.test.mjs` fails if that stops being true in either direction.
 //
 // Default posture is deny-all. A collection is unreachable until a rule below
 // explicitly grants access, so forgetting to write a rule fails closed.
+//
+// -----------------------------------------------------------------------------
+// The four properties this file exists to hold
+// -----------------------------------------------------------------------------
+//
+//  1. **No client can publish a warning.** `blackSpots` is write-denied to every
+//     client, reports can only ever be created as `pending`, and
+//     `blackSpotCandidates` — the algorithm's output — is unreadable by the
+//     mobile app and unwritable by anyone.
+//
+//  2. **Nobody approves their own report.** Enforced in
+//     `evaluateModerationDecision`, on the Admin SDK path, because there is no
+//     client approval path at all for these rules to guard.
+//
+//  3. **A reporter's identity stays with the reporter.** `incidentReports` is
+//     readable only by its author. Moderators reach reports through the Admin
+//     SDK, and the dashboard pseudonymises `reporterId` before it reaches a
+//     browser — see apps/admin/src/lib/reporterPrivacy.ts.
+//
+//  4. **Submission is bounded.** Rate limits and duplicate detection are
+//     enforced here rather than in the app, using the batch-coupling technique
+//     documented on `reportRateLimits` below.
+//
+// -----------------------------------------------------------------------------
+// Two conventions used throughout
+// -----------------------------------------------------------------------------
+//
+// **`hasOnly` on every client-written shape.** Firestore charges by document
+// size and these documents are written by a device we do not control. Without an
+// exact key list a client can attach arbitrary fields to its own profile and use
+// the database as free storage — and a field nobody expects is a field nobody
+// validates. An unexpected key means the client and these rules disagree about
+// the model, and refusal is the safe response to that.
+//
+// **Server time on every timestamp a client writes.** `createdAt == request.time`
+// is satisfiable only by `serverTimestamp()`. A device clock can be wrong, and
+// can be set deliberately: without this, a client could backdate a report to
+// distort the Phase 10 clustering, or forward-date a rate-limit counter to
+// escape its own window.
 // =============================================================================
 
 service cloud.firestore {
@@ -50,6 +88,29 @@ service cloud.firestore {
       return callerRole() in ['moderator', 'admin'];
     }
 
+    // -------------------------------------------------------------------------
+    // Server time (Phase 12)
+    // -------------------------------------------------------------------------
+    // `request.time` is the server's commit timestamp, and it is identical for
+    // every write in a single commit. Two things follow, and both are used
+    // below:
+    //
+    //   1. A field required to equal it can only have been written with
+    //      `serverTimestamp()`. A client cannot forge it, because it does not
+    //      know the value.
+    //   2. Requiring it on a *sibling* document, read through `getAfter`, proves
+    //      that sibling was written in the same commit — which is what couples a
+    //      report to its rate-limit counter.
+
+    function isServerTime(value) {
+      return value == request.time;
+    }
+
+    /** A document whose createdAt and updatedAt were both stamped by the server. */
+    function hasServerTimestamps(data) {
+      return isServerTime(data.createdAt) && isServerTime(data.updatedAt);
+    }
+
     // Note what is deliberately absent: no role grants **write** access anywhere
     // in this file. Privileged writes — approving a report, publishing a black
     // spot, appending to the audit trail — happen only through the Admin SDK in
@@ -76,6 +137,15 @@ service cloud.firestore {
                'hapticsEnabled', 'soundEnabled', 'darkModePreference',
                'createdAt', 'updatedAt'
              ])
+             // Phase 12. Without this a user could attach unlimited arbitrary
+             // fields to their own profile — the one document in the database
+             // they are allowed to write freely — and use it as free storage.
+             && data.keys().hasOnly([
+                  'id', 'name', 'email', 'phone', 'role',
+                  'alertRadiusM', 'alertsEnabled', 'backgroundMonitoringEnabled',
+                  'hapticsEnabled', 'soundEnabled', 'darkModePreference',
+                  'createdAt', 'updatedAt'
+                ])
              && data.id is string
              && data.name is string
              && data.name.size() >= 2
@@ -113,7 +183,8 @@ service cloud.firestore {
       allow create: if isSelf(userId)
                     && isValidProfileShape(request.resource.data)
                     && request.resource.data.id == userId
-                    && request.resource.data.role == 'user';
+                    && request.resource.data.role == 'user'
+                    && hasServerTimestamps(request.resource.data);
 
       // Preference updates. The immutable fields below are excluded so a client
       // cannot rewrite its own identity, escalate its role, or backdate
@@ -122,11 +193,18 @@ service cloud.firestore {
                     && hasNoPrivilegedFields(request.resource.data.diff(resource.data).affectedKeys())
                     && !request.resource.data.diff(resource.data).affectedKeys()
                          .hasAny(['id', 'email', 'createdAt'])
-                    && isValidProfileShape(request.resource.data);
+                    && isValidProfileShape(request.resource.data)
+                    // `createdAt` is already immutable above; this pins the new
+                    // `updatedAt` to the server clock so the field cannot be used
+                    // to smuggle an arbitrary value past the shape check.
+                    && isServerTime(request.resource.data.updatedAt);
 
-      // Account deletion runs through a Cloud Function in Phase 12 so that the
-      // Auth record, Storage objects and owned documents are removed together.
-      // A client-side delete would orphan all of them.
+      // Account deletion runs through the `deleteAccount` Cloud Function, which
+      // removes the Auth record, the Storage objects and every owned document
+      // together. A client-side delete would orphan all of them: the rules below
+      // deny deletion of a user's reports and alert logs, so a user who could
+      // delete only their profile would leave the rest behind with no owner and
+      // no way to reach it.
       allow delete: if false;
     }
 
@@ -212,7 +290,10 @@ service cloud.firestore {
              && data.longitude is number
              && data.longitude >= -180 && data.longitude <= 180
              && data.geohash is string
-             && data.geohash.size() >= 1
+             // The lower bound is 7, not 1, because the fingerprint below slices
+             // the first 7 characters. Enforced before the slice is evaluated,
+             // so a short geohash is refused rather than producing an error.
+             && data.geohash.size() >= 7
              && data.geohash.size() <= 22
              && data.imageUrls is list
              // Mirrors MAX_IMAGES_PER_REPORT.
@@ -220,12 +301,38 @@ service cloud.firestore {
              && (!data.keys().hasAny(['occurredAt']) || data.occurredAt is timestamp);
     }
 
+    // -------------------------------------------------------------------------
+    // Submission limits (Phase 12)
+    // -------------------------------------------------------------------------
+    // The id of the fingerprint document that a given report must claim,
+    // rebuilt here from the report's **own fields** rather than taken from the
+    // request. That is the whole trick: a client cannot satisfy the duplicate
+    // check by pointing at an unrelated document, because it does not get to
+    // choose which document is consulted.
+    //
+    // Must stay identical to `buildReportFingerprintId` in
+    // packages/shared-types/src/reportLimits.ts, which the client uses to
+    // produce a readable message instead of a bare PERMISSION_DENIED.
+    function fingerprintIdFor(data) {
+      return request.auth.uid + '__' + data.type + '__' + data.geohash[0:7];
+    }
+
+    function rateLimitAfter() {
+      return getAfter(/databases/$(database)/documents/reportRateLimits/$(request.auth.uid)).data;
+    }
+
+    function fingerprintAfter(data) {
+      return getAfter(/databases/$(database)/documents/reportFingerprints/$(fingerprintIdFor(data))).data;
+    }
+
     match /incidentReports/{reportId} {
 
       // A reporter reads only their own. There is no rule granting moderators
       // access here: the admin dashboard uses the Admin SDK, so widening this
       // for a client-side "moderator" role would add reach without adding a
-      // capability anyone needs.
+      // capability anyone needs. This is the rule behind the phase gate
+      // "reporter identity is private" — there is no query any signed-in user
+      // can run that returns another person's `reporterId`.
       allow get, list: if isSignedIn() && resource.data.reporterId == request.auth.uid;
 
       allow create: if isSignedIn()
@@ -234,7 +341,29 @@ service cloud.firestore {
                     && hasNoModerationFields(request.resource.data)
                     // The load-bearing line. Nothing a client submits is
                     // anything other than pending.
-                    && request.resource.data.status == 'pending';
+                    && request.resource.data.status == 'pending'
+                    && hasServerTimestamps(request.resource.data)
+
+                    // ----- Rate limit --------------------------------------
+                    // `getAfter` reads the counter's state *after this commit*.
+                    // Requiring its `lastReportAt` to equal `request.time`
+                    // therefore means the counter was written in this very
+                    // commit — a lone report write leaves a stale counter and is
+                    // refused. Verified against the emulator, not assumed.
+                    //
+                    // The counter's own rules (below) are what constrain the new
+                    // value; the cap is repeated here so that a mistake in either
+                    // place fails closed rather than opening a gap.
+                    && isServerTime(rateLimitAfter().lastReportAt)
+                    && rateLimitAfter().count <= 10
+
+                    // ----- Duplicate detection -----------------------------
+                    // The fingerprint must be claimed by *this* report. A second
+                    // report about the same incident type, at the same place, by
+                    // the same person carries a different id and so cannot claim
+                    // a fingerprint the first one still holds.
+                    && isServerTime(fingerprintAfter(request.resource.data).lastReportAt)
+                    && fingerprintAfter(request.resource.data).reportId == reportId;
 
       // Deliberately closed. There is no feature that edits a submitted report,
       // and every field a user might want to change is one a moderator has
@@ -242,13 +371,176 @@ service cloud.firestore {
       // flipping status after approval, are both worse than making the user file
       // a new report.
       //
-      // TODO(phase-12): if withdrawing a pending report is added, it belongs
-      // here as a narrow rule allowing the author to change status from
-      // 'pending' to a 'withdrawn' state only, never to 'approved'.
+      // Reviewed in Phase 12 and deliberately left closed. Withdrawal is not a
+      // feature; if it is ever added it belongs here as a narrow rule allowing
+      // the author to move `status` from 'pending' to a 'withdrawn' state only,
+      // never to 'approved'.
+      //
+      // Note the interaction with the retry path: because this is closed, a
+      // `setDoc` onto a report that already exists is evaluated as an `update`
+      // and refused. `submitIncidentReport` therefore treats "the document is
+      // already there and is mine" as success rather than retrying into a
+      // permission error — see the note there.
       allow update: if false;
 
       // Deletion would destroy the evidence trail behind a published black spot.
-      // Account deletion cascades through a Cloud Function in Phase 12.
+      // Account deletion cascades through the `deleteAccount` Cloud Function,
+      // which uses the Admin SDK and so is not bound by this line.
+      allow delete: if false;
+    }
+
+    // -------------------------------------------------------------------------
+    // reportRateLimits/{userId}   (Phase 12)
+    // -------------------------------------------------------------------------
+    // A per-user submission counter, written by the user themselves.
+    //
+    // That sounds like asking the fox to count the hens, and it would be if the
+    // rules validated the *value*. They validate the **transition** instead, and
+    // there are only two legal ones:
+    //
+    //   - within the current window: `count` goes up by exactly one and stays
+    //     at or below the cap, and `windowStartAt` does not move;
+    //   - after the window has elapsed: `count` resets to one and
+    //     `windowStartAt` becomes now.
+    //
+    // Everything a client might try instead is closed off:
+    //
+    //   * writing a lower count, or a count that does not increment — refused,
+    //     the transition is exact;
+    //   * moving `windowStartAt` forward to escape the window — refused, it must
+    //     either be unchanged or equal `request.time`;
+    //   * back-dating `lastReportAt` to defeat the minimum gap — refused, it must
+    //     equal `request.time`, which only `serverTimestamp()` produces;
+    //   * deleting the document to start over — refused below;
+    //   * simply not writing it — refused by the `getAfter` coupling on the
+    //     report itself, which is the piece that makes all of this binding.
+    //
+    // The constants are duplicated from `REPORT_RATE_LIMIT` in
+    // packages/shared-types/src/reportLimits.ts because a rules file cannot
+    // import. `tests/limits.test.mjs` asserts the two agree, so drift fails the
+    // build rather than silently changing the limit.
+
+    function isValidRateLimitShape(data) {
+      return data.keys().hasOnly(['userId', 'windowStartAt', 'count', 'lastReportAt'])
+             && data.keys().hasAll(['userId', 'windowStartAt', 'count', 'lastReportAt'])
+             && data.userId == request.auth.uid
+             && data.count is int
+             && data.count >= 1
+             && data.windowStartAt is timestamp
+             && isServerTime(data.lastReportAt);
+    }
+
+    /** True while the window that began at `startedAt` is still current. */
+    function withinWindow(startedAt) {
+      return request.time <= startedAt + duration.value(24, 'h');
+    }
+
+    match /reportRateLimits/{userId} {
+
+      // The owner may read their own counter so the app can say "you have
+      // reached today's limit" before attempting a write that would only come
+      // back as PERMISSION_DENIED. No list capability: the collection is keyed
+      // by uid, so listing it would enumerate everyone who has ever reported.
+      allow get: if isSelf(userId);
+
+      allow create: if isSelf(userId)
+                    && isValidRateLimitShape(request.resource.data)
+                    && request.resource.data.count == 1
+                    && isServerTime(request.resource.data.windowStartAt);
+
+      allow update: if isSelf(userId)
+                    && isValidRateLimitShape(request.resource.data)
+                    // Anti-flood: at least this long between two submissions.
+                    && request.time > resource.data.lastReportAt + duration.value(60, 's')
+                    && (
+                         // Window elapsed — start a new one.
+                         (
+                           !withinWindow(resource.data.windowStartAt)
+                           && request.resource.data.count == 1
+                           && isServerTime(request.resource.data.windowStartAt)
+                         )
+                         ||
+                         // Still inside the window — spend one of the allowance.
+                         (
+                           withinWindow(resource.data.windowStartAt)
+                           && request.resource.data.windowStartAt == resource.data.windowStartAt
+                           && request.resource.data.count == resource.data.count + 1
+                           && request.resource.data.count <= 10
+                         )
+                       );
+
+      // The counter must be monotonic within its window. If it could be deleted,
+      // the next `create` would reset the allowance to one and the limit would
+      // mean nothing.
+      allow delete: if false;
+    }
+
+    // -------------------------------------------------------------------------
+    // reportFingerprints/{fingerprintId}   (Phase 12)
+    // -------------------------------------------------------------------------
+    // Server-side duplicate detection.
+    //
+    // The document id is `{uid}__{type}__{geohash[0:7]}` — reporter, incident
+    // type, and a ~150 m cell. The report rule above **recomputes that id from
+    // the report's own fields**, so the client does not get to nominate which
+    // fingerprint is checked. Whichever document it writes, the one consulted is
+    // the one derived from what it claims to be reporting.
+    //
+    // The stored `reportId` is what keeps retries working. A submission that the
+    // server committed but whose response was lost is retried with the same
+    // reserved id, re-claims its own fingerprint, and is allowed. A second,
+    // genuinely new report carries a different id and is refused until the
+    // window expires.
+    //
+    // Note what this is not: a proximity check. A grid cell has edges, and two
+    // reports 20 m apart can fall either side of one. It suppresses casual and
+    // accidental repeats; the rigorous version is the haversine dedupe the
+    // analytics service runs on ingest, where real distances are available.
+
+    function isValidFingerprintShape(data, fingerprintId) {
+      return data.keys().hasOnly(['reporterId', 'reportId', 'lastReportAt'])
+             && data.keys().hasAll(['reporterId', 'reportId', 'lastReportAt'])
+             && data.reporterId == request.auth.uid
+             && data.reportId is string
+             && data.reportId.size() > 0
+             && data.reportId.size() <= 128
+             && isServerTime(data.lastReportAt)
+             // The id must begin with the caller's own uid. Not a security
+             // control — a fingerprint filed under someone else's prefix is
+             // simply never consulted, because the report rule derives the path
+             // from `request.auth.uid`. It is here so the collection cannot be
+             // used as a scratch space of arbitrary documents.
+             && fingerprintId[0:request.auth.uid.size()] == request.auth.uid;
+    }
+
+    match /reportFingerprints/{fingerprintId} {
+
+      // Readable by its owner so the app can explain a refusal. The id itself
+      // encodes a place the user reported from, so no list capability: listing
+      // would hand any signed-in caller a map of where people report.
+      allow get: if isSignedIn()
+                 && fingerprintId[0:request.auth.uid.size()] == request.auth.uid;
+
+      allow create: if isSignedIn() && isValidFingerprintShape(request.resource.data, fingerprintId);
+
+      allow update: if isSignedIn()
+                    && isValidFingerprintShape(request.resource.data, fingerprintId)
+                    && resource.data.reporterId == request.auth.uid
+                    && (
+                         // The same submission, retried. Idempotent.
+                         request.resource.data.reportId == resource.data.reportId
+                         ||
+                         // Or the previous report here is old enough that a new
+                         // one is a new event rather than a duplicate. A black
+                         // spot is somewhere things happen repeatedly, so this
+                         // must expire — a permanent fingerprint would suppress
+                         // exactly the corroboration the analytics service looks
+                         // for.
+                         request.time > resource.data.lastReportAt + duration.value(6, 'h')
+                       );
+
+      // Deleting a fingerprint would clear the duplicate window early, which is
+      // the entire thing it exists to hold.
       allow delete: if false;
     }
 
@@ -304,7 +596,8 @@ service cloud.firestore {
 
       allow create: if isSignedIn()
                     && request.resource.data.userId == request.auth.uid
-                    && isValidContactShape(request.resource.data);
+                    && isValidContactShape(request.resource.data)
+                    && hasServerTimestamps(request.resource.data);
 
       // `userId` and `createdAt` are immutable: reassigning a contact to another
       // account, or backdating it, serve no feature and would break the
@@ -314,7 +607,8 @@ service cloud.firestore {
                     && request.resource.data.userId == request.auth.uid
                     && isValidContactShape(request.resource.data)
                     && !request.resource.data.diff(resource.data).affectedKeys()
-                         .hasAny(['userId', 'createdAt']);
+                         .hasAny(['userId', 'createdAt'])
+                    && isServerTime(request.resource.data.updatedAt);
 
       // Immediate, and deliberately so — see note 2 above.
       allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
@@ -336,10 +630,31 @@ service cloud.firestore {
                     && request.resource.data.userId == request.auth.uid
                     && request.resource.data.keys().hasAll(
                          ['userId', 'blackSpotId', 'distanceM', 'alertType', 'createdAt'])
+                    // Phase 12. The optional coordinates are the only extra keys
+                    // permitted; without `hasOnly` this append-only, never-read
+                    // collection is an unbounded write target for any signed-in
+                    // client, and it is the one place a client may create
+                    // documents without limit.
+                    && request.resource.data.keys().hasOnly(
+                         ['userId', 'blackSpotId', 'distanceM', 'alertType',
+                          'latitude', 'longitude', 'createdAt'])
                     && request.resource.data.blackSpotId is string
+                    && request.resource.data.blackSpotId.size() > 0
+                    && request.resource.data.blackSpotId.size() <= 128
                     && request.resource.data.distanceM is number
                     && request.resource.data.distanceM >= 0
-                    && request.resource.data.alertType in ['foreground', 'background', 'push'];
+                    && request.resource.data.alertType in ['foreground', 'background', 'push']
+                    // An alert log is evidence about when a warning was shown.
+                    // A client clock would make that evidence worthless.
+                    && isServerTime(request.resource.data.createdAt)
+                    && (!request.resource.data.keys().hasAny(['latitude'])
+                        || (request.resource.data.latitude is number
+                            && request.resource.data.latitude >= -90
+                            && request.resource.data.latitude <= 90))
+                    && (!request.resource.data.keys().hasAny(['longitude'])
+                        || (request.resource.data.longitude is number
+                            && request.resource.data.longitude >= -180
+                            && request.resource.data.longitude <= 180));
 
       allow update, delete: if false;
     }
@@ -416,8 +731,31 @@ service cloud.firestore {
     }
 
     // -------------------------------------------------------------------------
-    // Everything else: denied until a phase adds an explicit rule.
+    // deletedAccounts/{tombstoneId}   (Phase 12)
     // -------------------------------------------------------------------------
+    // Written by the `deleteAccount` Cloud Function when an account is erased.
+    //
+    // **Closed to every client, including the account's former owner** — after
+    // deletion there is no signed-in owner left to read it, and before deletion
+    // there is nothing to read.
+    //
+    // What it holds is deliberately minimal and deliberately not personal: a
+    // random tombstone id, counts of what was removed, and the time. It exists
+    // so an operator can answer "was this account's data actually deleted, and
+    // when" without retaining the account. It carries no uid, no email and no
+    // location — a deletion record that identified the person would defeat the
+    // deletion. See functions/src/deleteAccount.ts.
+    match /deletedAccounts/{tombstoneId} {
+      allow read, write: if false;
+    }
+
+    // -------------------------------------------------------------------------
+    // Everything else: denied.
+    // -------------------------------------------------------------------------
+    // Reached only by a collection nobody wrote a rule for. `tests/coverage.test.mjs`
+    // asserts that every name in `COLLECTIONS` has a block above, so arriving
+    // here means a genuinely unknown path — and denial is the right answer to
+    // one of those.
     match /{document=**} {
       allow read, write: if false;
     }

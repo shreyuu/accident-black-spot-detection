@@ -37,6 +37,19 @@ const serverSchema = z.object({
     .min(300)
     .max(60 * 60 * 12)
     .default(3600),
+
+  /**
+   * Salt for the reporter pseudonyms shown in the moderation queue.
+   *
+   * Optional, with a development default, because a missing salt must not stop
+   * the dashboard starting — the pseudonym is a privacy improvement over showing
+   * the uid whether or not it is salted. Unsalted, though, somebody holding a
+   * list of uids could confirm which of them filed a given report by
+   * recomputing the hash, so a deployment should set this to a long random
+   * string and then leave it alone: changing it renumbers every reporter and
+   * destroys a moderator's ability to recognise a repeat.
+   */
+  reporterSalt: z.string().trim().min(1).default('development-reporter-salt'),
 });
 
 const publicSchema = z.object({
@@ -59,6 +72,7 @@ function parseServerEnv() {
     authEmulatorHost: blankToUndefined(process.env.FIREBASE_AUTH_EMULATOR_HOST),
     firestoreEmulatorHost: blankToUndefined(process.env.FIRESTORE_EMULATOR_HOST),
     sessionMaxAgeSeconds: process.env.ADMIN_SESSION_MAX_AGE_SECONDS,
+    reporterSalt: blankToUndefined(process.env.REPORTER_SALT),
   });
 
   if (!result.success) {

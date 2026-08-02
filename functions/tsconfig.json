@@ -1,0 +1,39 @@
+{
+  "compilerOptions": {
+    // Matches the rest of the repository. This code runs with a credential that
+    // bypasses every security rule, so it must not be the loose link.
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "exactOptionalPropertyTypes": true,
+    "forceConsistentCasingInFileNames": true,
+
+    "target": "ES2023",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "lib": ["ES2023"],
+    "types": ["node"],
+
+    // Unlike every other workspace, this one is **emitted**: Cloud Functions run
+    // compiled JavaScript, not TypeScript source. `rewriteRelativeImportExtensions`
+    // is what lets the source keep the repository's explicit `.ts` import style
+    // while the emitted files import `.js`, which is what Node actually resolves.
+    "outDir": "lib",
+    "rootDir": "src",
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
+    "sourceMap": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true
+  },
+  // Tests are not deployed. They are excluded from the emit so that the
+  // deployed bundle contains no test code and no test-only imports — in
+  // particular the shared-types import, which is TypeScript source that the
+  // Cloud Functions runtime could not load.
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/**/__tests__/**"]
+}

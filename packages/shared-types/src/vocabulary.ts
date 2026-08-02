@@ -101,7 +101,15 @@ export type AuditTargetType = (typeof AUDIT_TARGET_TYPES)[number];
 // Collection names
 // -----------------------------------------------------------------------------
 
-/** Single source of truth for collection paths across both apps and the rules. */
+/**
+ * Single source of truth for collection paths across both apps and the rules.
+ *
+ * Every entry here has a matching `match` block in `firebase/firestore.rules`,
+ * and `firebase/tests/coverage.test.mjs` asserts that neither list grows without
+ * the other — a collection with no rule is denied by the catch-all, which fails
+ * closed but silently, and a rule for a collection nobody names is dead weight
+ * nobody reviews.
+ */
 export const COLLECTIONS = {
   users: 'users',
   blackSpots: 'blackSpots',
@@ -109,4 +117,15 @@ export const COLLECTIONS = {
   emergencyContacts: 'emergencyContacts',
   alertLogs: 'alertLogs',
   adminAuditLogs: 'adminAuditLogs',
+  // Phase 10. Written only by the analytics service through the Admin SDK.
+  blackSpotCandidates: 'blackSpotCandidates',
+  analysisJobs: 'analysisJobs',
+  // Phase 12. Written by the client, but only in the same commit as the report
+  // they authorise — see `reportLimits.ts`.
+  reportRateLimits: 'reportRateLimits',
+  reportFingerprints: 'reportFingerprints',
+  // Phase 12. Written only by the account-deletion Cloud Function.
+  deletedAccounts: 'deletedAccounts',
 } as const;
+
+export type CollectionName = (typeof COLLECTIONS)[keyof typeof COLLECTIONS];

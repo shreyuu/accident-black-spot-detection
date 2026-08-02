@@ -6,6 +6,15 @@
   "storage": {
     "rules": "firebase/storage.rules"
   },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "runtime": "nodejs22",
+      "predeploy": ["npm --prefix functions run build"],
+      "ignore": ["node_modules", ".git", "src", "*.local", ".secret.local", "firebase-debug.log"]
+    }
+  ],
   "emulators": {
     "auth": {
       "port": 9099
@@ -15,6 +24,9 @@
     },
     "storage": {
       "port": 9199
+    },
+    "functions": {
+      "port": 5001
     },
     "ui": {
       "enabled": true,

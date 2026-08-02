@@ -10,6 +10,8 @@ import {
   createTestEnvironment,
   reportFixture,
   seed,
+  serverTimestamp,
+  submitReportBatch,
 } from './helpers.mjs';
 
 /**
@@ -79,17 +81,17 @@ describe('incidentReports ownership', () => {
   describe('creation', () => {
     it('accepts a valid pending report from its author', async () => {
       const db = asUser(env, 'author');
-      await assertSucceeds(
-        db.doc('incidentReports/fresh').set(reportFixture({ reporterId: 'author' })),
-      );
+      await assertSucceeds(submitReportBatch(db, { reporterId: 'author', reportId: 'fresh' }));
     });
 
     it('refuses a report created as approved', async () => {
       const db = asUser(env, 'author');
       await assertFails(
-        db
-          .doc('incidentReports/sneaky')
-          .set(reportFixture({ reporterId: 'author', status: 'approved' })),
+        submitReportBatch(db, {
+          reporterId: 'author',
+          reportId: 'sneaky',
+          report: { status: 'approved' },
+        }),
       );
     });
 
@@ -102,9 +104,11 @@ describe('incidentReports ownership', () => {
         { moderationNotes: 'approved by me' },
       ]) {
         await assertFails(
-          db
-            .doc(`incidentReports/extra-${Object.keys(extra)[0]}`)
-            .set(reportFixture({ reporterId: 'author', ...extra })),
+          submitReportBatch(db, {
+            reporterId: 'author',
+            reportId: `extra-${Object.keys(extra)[0]}`,
+            report: extra,
+          }),
         );
       }
     });
@@ -112,7 +116,35 @@ describe('incidentReports ownership', () => {
     it('refuses filing a report under another uid', async () => {
       const db = asUser(env, 'author');
       await assertFails(
-        db.doc('incidentReports/spoofed').set(reportFixture({ reporterId: 'victim' })),
+        submitReportBatch(db, {
+          reporterId: 'author',
+          reportId: 'spoofed',
+          report: { reporterId: 'victim' },
+        }),
+      );
+    });
+
+    it('refuses a report whose timestamps come from the device clock', async () => {
+      // A backdated report would distort the Phase 10 clustering and could be
+      // used to manufacture a history for a location.
+      const db = asUser(env, 'author');
+      await assertFails(
+        submitReportBatch(db, {
+          reporterId: 'author',
+          reportId: 'backdated',
+          report: { createdAt: new Date('2020-01-01'), updatedAt: new Date('2020-01-01') },
+        }),
+      );
+    });
+
+    it('refuses a report carrying an unexpected field', async () => {
+      const db = asUser(env, 'author');
+      await assertFails(
+        submitReportBatch(db, {
+          reporterId: 'author',
+          reportId: 'extra-key',
+          report: { hiddenPayload: 'x'.repeat(500) },
+        }),
       );
     });
   });
@@ -128,7 +160,9 @@ describe('emergencyContacts ownership', () => {
     const db = asUser(env, 'owner');
     await assertSucceeds(db.doc('emergencyContacts/mine').get());
     await assertSucceeds(
-      db.doc('emergencyContacts/mine').update({ phone: '+447700900999', updatedAt: new Date() }),
+      db
+        .doc('emergencyContacts/mine')
+        .update({ phone: '+447700900999', updatedAt: serverTimestamp() }),
     );
   });
 

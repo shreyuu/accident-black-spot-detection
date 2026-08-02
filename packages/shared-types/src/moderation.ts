@@ -105,7 +105,7 @@ export function evaluateModerationDecision(context: ModerationContext): Moderati
    * and silently flipping it would leave that warning resting on something the
    * audit trail says was rejected.
    *
-   * TODO(phase-12): a supervised correction path — a second admin reopening a
+   * TODO(phase-13): a supervised correction path — a second admin reopening a
    * decided report, with the reversal itself audited — is the right way to fix a
    * mistake, and is out of scope here.
    */
