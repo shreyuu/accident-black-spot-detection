@@ -28,7 +28,12 @@ export default async function ReportsPage() {
     return null;
   }
 
-  const [pending, decided] = await Promise.all([fetchPendingReports(), fetchDecidedReports()]);
+  // The actor's uid goes *into* the query layer so that "is this mine" is
+  // resolved server-side; it never comes back out as an identifier.
+  const [pending, decided] = await Promise.all([
+    fetchPendingReports(actor.uid),
+    fetchDecidedReports(actor.uid),
+  ]);
 
   return (
     <>
@@ -49,7 +54,7 @@ export default async function ReportsPage() {
           <p className="muted small">Every submitted report has been decided.</p>
         </div>
       ) : (
-        pending.map((report) => <ReportCard key={report.id} report={report} actorUid={actor.uid} />)
+        pending.map((report) => <ReportCard key={report.id} report={report} />)
       )}
 
       <h2 style={{ marginTop: '2rem' }}>Recently decided</h2>
@@ -61,6 +66,7 @@ export default async function ReportsPage() {
             <thead>
               <tr>
                 <th scope="col">Type</th>
+                <th scope="col">Reporter</th>
                 <th scope="col">Status</th>
                 <th scope="col">Description</th>
                 <th scope="col">Note to reporter</th>
@@ -70,6 +76,7 @@ export default async function ReportsPage() {
               {decided.map((report) => (
                 <tr key={report.id}>
                   <td>{report.type}</td>
+                  <td className="muted small">{report.reporter.label}</td>
                   <td>
                     <span className={`badge ${report.status}`}>{report.status}</span>
                   </td>
@@ -85,9 +92,7 @@ export default async function ReportsPage() {
   );
 }
 
-function ReportCard({ report, actorUid }: { report: ReportRow; actorUid: string }) {
-  const isOwnReport = report.reporterId === actorUid;
-
+function ReportCard({ report }: { report: ReportRow }) {
   return (
     <article className="card">
       <div className="actions" style={{ justifyContent: 'space-between' }}>
@@ -97,6 +102,16 @@ function ReportCard({ report, actorUid }: { report: ReportRow; actorUid: string 
       </div>
 
       <p>{report.description}</p>
+
+      <p className="muted small">
+        {/*
+          A stable pseudonym, not the account id. It is here so a moderator can
+          see that several reports about one junction came from one person
+          rather than several — which is the difference between corroboration
+          and one person's insistence.
+        */}
+        {report.reporter.label}
+      </p>
 
       <p className="muted small">
         {report.latitude.toFixed(5)}, {report.longitude.toFixed(5)}
@@ -131,7 +146,7 @@ function ReportCard({ report, actorUid }: { report: ReportRow; actorUid: string 
         <p className="muted small">No photographs attached.</p>
       )}
 
-      {isOwnReport ? (
+      {report.reporter.isOwnReport ? (
         <div className="notice warn">
           You submitted this report, so you cannot decide it. Another moderator must review it —
           this restriction has no override.

@@ -62,33 +62,61 @@ around — it is exactly the case the fallback chain and the offline cache exist
 for. `TODO(phase-14)` notes that anything beyond demonstration should point at an
 instance the project runs or pays for.
 
-### Google Places (New) — optional
+### Google Places (New) — optional, and proxied since Phase 12
 
-Enabled only when `EXPO_PUBLIC_GOOGLE_PLACES_API_KEY` is set. It exists to prove
-the abstraction is real rather than decorative, and for better coverage where
-OpenStreetMap is thin.
+Enabled only when `EXPO_PUBLIC_GOOGLE_PLACES_PROXY_ENABLED` is `true`. It exists
+to prove the abstraction is real rather than decorative, and for better coverage
+where OpenStreetMap is thin.
 
-If you do set a key, it is **public, billable configuration** — treat it that
-way:
+**Note the change in Phase 12.** That environment variable is now a _flag_, not a
+key. Until Phase 12 the app carried `EXPO_PUBLIC_GOOGLE_PLACES_API_KEY` and
+called Google directly. Every `EXPO_PUBLIC_*` value is inlined into the shipped
+JavaScript bundle and can be extracted from an app in minutes, so the key was
+**public, billable configuration that no client-side measure could make secret** —
+the only available mitigations were restricting it by bundle id and API and
+capping the daily quota.
 
-- restrict by iOS bundle id / Android package name and signing SHA-1;
-- restrict to the Places API alone;
-- set a daily quota cap, so a leak is bounded in cost rather than open-ended.
+The call now goes to the `nearbyPlacesProxy` Cloud Function, which holds the key
+as a Secret Manager secret. There is no billable credential in the bundle at all,
+which is a different thing from a well-restricted one. Set it with:
 
-The request also sends a tight `X-Goog-FieldMask` — Google bills per field, and
+```bash
+firebase functions:secrets:set GOOGLE_PLACES_API_KEY
+```
+
+and, for the emulator, in `functions/.secret.local` (git-ignored).
+
+What the proxy adds beyond holding the key:
+
+- **it requires authentication**, so it is not an open relay onto a billable API;
+- **it bounds the radius** and **allow-lists the place types** to `hospital` and
+  `police`, so it cannot be turned into a general Places gateway on this
+  project's billing account;
+- **it rounds the coordinates again.** The app already rounds to five decimal
+  places; a proxy that trusted its caller to have done so would not be a privacy
+  control.
+- **it never forwards the upstream error body**, which can echo the key back.
+
+The request still sends a tight `X-Goog-FieldMask` — Google bills per field, and
 asking for `places.*` would be both expensive and a request for more data than
-the feature uses. The key travels in a header, never a query parameter, so it
-does not end up in intermediary logs.
+the feature uses — and the key travels in a header, never a query parameter.
 
-**The genuinely private option is a server-side proxy**, which is the right
-answer for production. `TODO(phase-12)` in `googlePlacesProvider.ts` tracks
-moving it there as part of the security review; the analytics service arriving in
-Phase 10 is the natural host.
+`mapGooglePlacesResponse` stays in the app, running on the raw response the proxy
+forwards. It is the piece that knows how a Places record becomes a `NearbyPlace`,
+it is already tested, and moving it to the server would either duplicate it or
+strand it. The function stays as thin as the one job it exists for.
+
+If the flag is on but the server has no key, the proxy answers
+`failed-precondition`, the provider throws, and the chain falls through to
+OpenStreetMap — so an incomplete setup degrades rather than breaking.
 
 ### Nothing secret is committed
 
-The repository contains no key. `.env` is gitignored, `.env.example` ships blank
-values, and the default path needs no credential at all.
+The repository contains no key. `.env` is gitignored, the `*.example` templates
+ship blank values, and the default path needs no credential at all. Since Phase
+12 this is also _enforced_ rather than merely intended: `npm run scan:secrets`
+runs as part of `npm run verify` and fails the build if anything credential-shaped
+reaches a file git is carrying.
 
 ---
 

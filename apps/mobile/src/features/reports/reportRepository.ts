@@ -5,13 +5,21 @@ import {
   limit as limitTo,
   orderBy,
   query,
+  runTransaction,
   serverTimestamp,
-  setDoc,
   where,
   type DocumentData,
   type QueryDocumentSnapshot,
   type Timestamp,
 } from 'firebase/firestore';
+
+import {
+  buildReportFingerprintId,
+  evaluateReportLimits,
+  type ReportFingerprintState,
+  type ReportLimitRefusal,
+  type ReportRateLimitState,
+} from '@accident-black-spot-detection/shared-types';
 
 import type { IncidentReportWritePayload } from '@/features/reports/reportDocument';
 import { incidentReportDocumentSchema } from '@/features/reports/reportSchemas';
@@ -47,32 +55,193 @@ export function reserveIncidentReportId(): string {
   return doc(collection(getFirebaseFirestore(), INCIDENT_REPORTS_COLLECTION)).id;
 }
 
+export const RATE_LIMITS_COLLECTION = 'reportRateLimits';
+export const FINGERPRINTS_COLLECTION = 'reportFingerprints';
+
+/** Refusal reason → the `AppError` kind that gives the right UI affordance. */
+function toLimitError(refusal: ReportLimitRefusal): AppError {
+  return new AppError('validation', refusal.message, {
+    // Never retryable. A "Try again" button on a rate limit does nothing but
+    // hammer the lockout — see the note on `retryable` in utils/errors.ts.
+    retryable: false,
+    technicalMessage: `Report refused: ${refusal.reason}; retry after ${refusal.retryAfterMs}ms.`,
+  });
+}
+
 /**
- * Write a report.
+ * Write a report, its rate-limit counter and its duplicate fingerprint together.
  *
- * `setDoc` on a reserved id rather than `addDoc`, for the idempotency described
- * above. The rules pin `status` to `'pending'` and reject any of the moderation
- * fields, so this write cannot publish anything.
+ * ## Why this is a transaction and not three writes
+ *
+ * The Firestore rules refuse a report unless the counter and the fingerprint are
+ * committed **in the same commit** — they read the post-commit state with
+ * `getAfter` and require its `lastReportAt` to equal `request.time`. So the
+ * three writes have to be atomic regardless.
+ *
+ * A `writeBatch` would satisfy that, but not correctly: the new count has to be
+ * *read* first, and a read followed by a separate batch is a race. Two
+ * submissions can read `count: 3` and both write `4`. The rules make that race
+ * fail closed rather than over-count — the second write finds `resource.count`
+ * already 4 and refuses — but the user gets an unexplained error. A transaction
+ * retries instead, which is the behaviour that belongs here.
+ *
+ * ## Why this needs a connection
+ *
+ * Transactions require a server round-trip and do not work offline, so an
+ * offline submission fails here rather than being queued into Firestore's local
+ * write log. That is deliberate and not a regression: the Phase 11 draft queue
+ * is what holds a report until connectivity returns, and it retries through this
+ * same path. A queued Firestore write would have been evaluated against the
+ * rules only at sync time, so a rate-limited or duplicate report would have
+ * failed silently, long after the user had been told it was sent.
+ *
+ * @param now Injected clock, used only to choose the *message*. The server
+ *   re-derives every limit from `request.time`, so a skewed device clock can
+ *   make this function more conservative than the server but never more
+ *   permissive.
  */
 export async function createIncidentReport(
   reportId: string,
   payload: IncidentReportWritePayload,
+  now: number = Date.now(),
 ): Promise<void> {
-  const reportRef = doc(getFirebaseFirestore(), INCIDENT_REPORTS_COLLECTION, reportId);
+  const firestore = getFirebaseFirestore();
+  const reportRef = doc(firestore, INCIDENT_REPORTS_COLLECTION, reportId);
+  const rateLimitRef = doc(firestore, RATE_LIMITS_COLLECTION, payload.reporterId);
+  const fingerprintRef = doc(
+    firestore,
+    FINGERPRINTS_COLLECTION,
+    buildReportFingerprintId(payload.reporterId, payload.type, payload.geohash),
+  );
 
-  await setDoc(reportRef, {
-    ...payload,
-    // Server clock, not the device's. A backdated report would distort the
-    // Phase 10 clustering and could be used to fake a history for a location.
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
+  let alreadySubmitted = false;
+
+  await runTransaction(firestore, async (transaction) => {
+    // Reads first: Firestore requires every read in a transaction to precede
+    // every write.
+    const [existingReport, rateLimitSnapshot, fingerprintSnapshot] = await Promise.all([
+      transaction.get(reportRef),
+      transaction.get(rateLimitRef),
+      transaction.get(fingerprintRef),
+    ]);
+
+    /**
+     * The retry-after-a-lost-response case.
+     *
+     * The reserved id is reused across retries, so if the first attempt actually
+     * committed, the document is already here. Rewriting it is not an option —
+     * `allow update: if false` on `incidentReports` refuses a second `set` onto
+     * an existing document — and there is nothing to fix, so this is success.
+     * Reporting it as an error would push the user into filing a duplicate.
+     */
+    if (existingReport.exists()) {
+      alreadySubmitted = true;
+      return;
+    }
+
+    const rateLimit = toRateLimitState(rateLimitSnapshot.data(), payload.reporterId);
+    const fingerprint = toFingerprintState(fingerprintSnapshot.data());
+
+    const decision = evaluateReportLimits({
+      rateLimit,
+      fingerprint,
+      reporterId: payload.reporterId,
+      reportId,
+      nowMs: now,
+    });
+
+    if (!decision.allowed) {
+      // Aborts the transaction. Nothing is written, so a refused submission does
+      // not consume the allowance it was refused by.
+      throw toLimitError(decision.refusal);
+    }
+
+    const { nextRateLimit } = decision;
+
+    transaction.set(rateLimitRef, {
+      userId: payload.reporterId,
+      // The *existing* Timestamp is written back unchanged when the window is
+      // still current. The rule compares it for exact equality, so rebuilding it
+      // from milliseconds would drift and be refused.
+      windowStartAt:
+        rateLimit !== null && nextRateLimit.windowStartAtMs === rateLimit.windowStartAtMs
+          ? rateLimitSnapshot.get('windowStartAt')
+          : serverTimestamp(),
+      count: nextRateLimit.count,
+      lastReportAt: serverTimestamp(),
+    });
+
+    transaction.set(fingerprintRef, {
+      reporterId: payload.reporterId,
+      reportId,
+      lastReportAt: serverTimestamp(),
+    });
+
+    transaction.set(reportRef, {
+      ...payload,
+      // Server clock, not the device's. A backdated report would distort the
+      // Phase 10 clustering and could be used to fake a history for a location.
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
   });
+
+  if (alreadySubmitted) {
+    logger.info('reportRepository', 'Report was already submitted; treating the retry as success', {
+      reportId,
+    });
+    return;
+  }
 
   logger.info('reportRepository', 'Submitted an incident report', {
     reportId,
     type: payload.type,
     imageCount: payload.imageUrls.length,
   });
+}
+
+/** Read the counter into the shape the shared limit logic expects, or `null`. */
+function toRateLimitState(
+  data: DocumentData | undefined,
+  reporterId: string,
+): ReportRateLimitState | null {
+  if (data === undefined) {
+    return null;
+  }
+
+  const windowStartAt = data.windowStartAt as Timestamp | undefined;
+  const lastReportAt = data.lastReportAt as Timestamp | undefined;
+
+  // A half-written counter is treated as absent. The rules are what decide
+  // whether the resulting write is legal, and guessing at a malformed document
+  // here would only produce a worse error message.
+  if (windowStartAt === undefined || lastReportAt === undefined || typeof data.count !== 'number') {
+    return null;
+  }
+
+  return {
+    userId: reporterId,
+    windowStartAtMs: windowStartAt.toMillis(),
+    count: data.count,
+    lastReportAtMs: lastReportAt.toMillis(),
+  };
+}
+
+function toFingerprintState(data: DocumentData | undefined): ReportFingerprintState | null {
+  if (data === undefined) {
+    return null;
+  }
+
+  const lastReportAt = data.lastReportAt as Timestamp | undefined;
+  if (lastReportAt === undefined || typeof data.reportId !== 'string') {
+    return null;
+  }
+
+  return {
+    reporterId: typeof data.reporterId === 'string' ? data.reporterId : '',
+    reportId: data.reportId,
+    lastReportAtMs: lastReportAt.toMillis(),
+  };
 }
 
 /** Parse one snapshot, returning `null` rather than throwing on a bad record. */

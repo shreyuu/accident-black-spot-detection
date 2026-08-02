@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 
-import { canManageBlackSpots } from '@accident-black-spot-detection/shared-types';
+import { canManageBlackSpots, canManageRoles } from '@accident-black-spot-detection/shared-types';
 
 import { SignOutButton } from '@/components/SignOutButton';
 import { getDashboardActor } from '@/lib/session';
@@ -41,6 +41,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
               presentation, not protection.
             */}
             {isAdmin ? <a href="/black-spots">Black spots</a> : null}
+            {canManageRoles(actor.role) ? <a href="/roles">Roles</a> : null}
             <a href="/audit">Audit log</a>
           </nav>
 

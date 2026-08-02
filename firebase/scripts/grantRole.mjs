@@ -12,8 +12,10 @@
  * dashboard that could create its own first admin would be a dashboard anyone
  * could create an admin in.
  *
- * TODO(phase-12): an admin-only screen for promoting *subsequent* moderators,
- * audited like every other privileged action. This script remains the bootstrap.
+ * Phase 12 added that screen for every *subsequent* role change: `/roles` in the
+ * dashboard, admin-only, audited, and revoking the target's sessions so a
+ * demotion takes effect at once. This script remains the bootstrap, and is the
+ * only way to create the first administrator.
  *
  * Usage, with the emulators running:
  *   npm run grant-role -- moderator@example.test moderator

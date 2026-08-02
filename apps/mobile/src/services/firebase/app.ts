@@ -7,6 +7,7 @@ import {
   type Auth,
 } from 'firebase/auth';
 import { getFirestore, initializeFirestore, type Firestore } from 'firebase/firestore';
+import { connectFunctionsEmulator, getFunctions, type Functions } from 'firebase/functions';
 import { connectStorageEmulator, getStorage, type FirebaseStorage } from 'firebase/storage';
 import { Platform } from 'react-native';
 
@@ -32,18 +33,24 @@ const EMULATOR_PORTS = {
   auth: 9099,
   firestore: 8080,
   storage: 9199,
+  functions: 5001,
 } as const;
+
+/** Must match the region the functions are deployed to. See `getFirebaseFunctions`. */
+const FUNCTIONS_REGION = 'us-central1';
 
 let cachedApp: FirebaseApp | null = null;
 let cachedAuth: Auth | null = null;
 let cachedFirestore: Firestore | null = null;
 let cachedStorage: FirebaseStorage | null = null;
+let cachedFunctions: Functions | null = null;
 
 /** Per-service emulator connection state. See `connectEmulator` for why. */
 const emulatorsConnected: Record<keyof typeof EMULATOR_PORTS, boolean> = {
   auth: false,
   firestore: false,
   storage: false,
+  functions: false,
 };
 
 /**
@@ -222,6 +229,30 @@ export function getFirebaseStorage(): FirebaseStorage {
     });
   }
   return cachedStorage;
+}
+
+/**
+ * Callable Cloud Functions (Phase 12).
+ *
+ * Three things reach the app through here, and each is something a client
+ * genuinely cannot do for itself: erasing data the security rules deliberately
+ * stop it erasing, assembling one authoritative export of everything held about
+ * it, and searching Google Places without carrying the billable key in the
+ * bundle.
+ *
+ * The region is pinned. `getFunctions(app)` defaults to `us-central1`, and a
+ * mismatch between here and the deployed region fails at call time with a 404
+ * that reads like the function does not exist.
+ */
+export function getFirebaseFunctions(): Functions {
+  if (cachedFunctions === null) {
+    cachedFunctions = getFunctions(getFirebaseApp(), FUNCTIONS_REGION);
+    const functions = cachedFunctions;
+    connectEmulator('functions', () => {
+      connectFunctionsEmulator(functions, resolveEmulatorHost(), EMULATOR_PORTS.functions);
+    });
+  }
+  return cachedFunctions;
 }
 
 /**

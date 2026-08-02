@@ -7,6 +7,9 @@ import {
   assertSucceeds,
   initializeTestEnvironment,
 } from '@firebase/rules-unit-testing';
+import { serverTimestamp } from 'firebase/firestore';
+
+import { buildReportFingerprintId } from '@accident-black-spot-detection/shared-types';
 
 /**
  * Shared setup for the Firestore rules tests.
@@ -197,6 +200,76 @@ export function candidateFixture(overrides = {}) {
     ...overrides,
   };
 }
+
+/**
+ * Submit a report the way the app must, as one atomic batch.
+ *
+ * Phase 12 couples three writes: the report, the caller's rate-limit counter and
+ * the fingerprint that detects duplicates. The report rule reads the other two
+ * with `getAfter` and requires their `lastReportAt` to equal `request.time`,
+ * which is only true for writes committed together — so a test that wrote the
+ * report alone would fail for the right reason but tell you nothing about the
+ * rest of the rule.
+ *
+ * Every part is overridable so a test can commit a *deliberately wrong* batch —
+ * a skipped counter, a client clock, a count that does not increment — and
+ * assert it is refused. That is most of `limits.test.mjs`.
+ *
+ * @param db A signed-in Firestore context from `asUser`.
+ * @param options.omit Names of the three writes to leave out of the batch.
+ */
+export function submitReportBatch(db, options = {}) {
+  const {
+    reporterId,
+    reportId = 'report-fresh',
+    report = {},
+    rateLimit = {},
+    fingerprint = {},
+    omit = [],
+  } = options;
+
+  // Server timestamps first, caller overrides last. The other order looks
+  // equivalent and is not: it silently replaced a test's deliberately backdated
+  // `createdAt`, so the test proved the helper worked rather than the rule.
+  const data = reportFixture({
+    reporterId,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    ...report,
+  });
+
+  const batch = db.batch();
+
+  if (!omit.includes('report')) {
+    batch.set(db.doc(`incidentReports/${reportId}`), data);
+  }
+
+  if (!omit.includes('rateLimit')) {
+    batch.set(db.doc(`reportRateLimits/${reporterId}`), {
+      userId: reporterId,
+      windowStartAt: serverTimestamp(),
+      count: 1,
+      lastReportAt: serverTimestamp(),
+      ...rateLimit,
+    });
+  }
+
+  if (!omit.includes('fingerprint')) {
+    const fingerprintId =
+      fingerprint.id ?? buildReportFingerprintId(reporterId, data.type, data.geohash);
+
+    batch.set(db.doc(`reportFingerprints/${fingerprintId}`), {
+      reporterId,
+      reportId,
+      lastReportAt: serverTimestamp(),
+      ...fingerprint.data,
+    });
+  }
+
+  return batch.commit();
+}
+
+export { buildReportFingerprintId, serverTimestamp };
 
 export function analysisJobFixture(overrides = {}) {
   return {

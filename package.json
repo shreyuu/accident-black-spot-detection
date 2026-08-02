@@ -7,7 +7,8 @@
   "workspaces": [
     "apps/*",
     "packages/*",
-    "firebase"
+    "firebase",
+    "functions"
   ],
   "engines": {
     "node": ">=20.19.4"
@@ -17,8 +18,10 @@
     "android": "npm run android --workspace @accident-black-spot-detection/mobile",
     "ios": "npm run ios --workspace @accident-black-spot-detection/mobile",
     "doctor": "npm run doctor --workspace @accident-black-spot-detection/mobile",
-    "emulators": "firebase emulators:start --only auth,firestore,storage",
-    "emulators:persist": "firebase emulators:start --only auth,firestore,storage --import=.firebase-data --export-on-exit=.firebase-data",
+    "emulators": "npm run build --workspace @accident-black-spot-detection/functions && firebase emulators:start --only auth,firestore,storage,functions",
+    "emulators:persist": "npm run build --workspace @accident-black-spot-detection/functions && firebase emulators:start --only auth,firestore,storage,functions --import=.firebase-data --export-on-exit=.firebase-data",
+    "emulators:norun-functions": "firebase emulators:start --only auth,firestore,storage",
+    "functions:build": "npm run build --workspace @accident-black-spot-detection/functions",
     "seed": "node firebase/seed/seedBlackSpots.mjs",
     "seed:reports": "node firebase/seed/seedIncidentReports.mjs",
     "lint": "npm run lint --workspaces --if-present",
@@ -26,7 +29,9 @@
     "test": "npm run test --workspaces --if-present",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "verify": "npm run format:check && npm run lint && npm run typecheck && npm run test",
+    "scan:secrets": "node scripts/scanSecrets.mjs",
+    "test:scripts": "node --test \"scripts/**/*.test.mjs\"",
+    "verify": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run test:scripts && npm run scan:secrets",
     "grant-role": "node firebase/scripts/grantRole.mjs",
     "test:rules": "npm run test:rules --workspace @accident-black-spot-detection/firebase",
     "admin": "npm run dev --workspace @accident-black-spot-detection/admin",
@@ -34,7 +39,8 @@
     "analytics:test": "cd services/analytics && uv run pytest",
     "analytics:lint": "cd services/analytics && uv run ruff check . && uv run ruff format --check . && uv run mypy app",
     "analytics:verify": "npm run analytics:lint && npm run analytics:test",
-    "verify:all": "npm run verify && npm run analytics:verify && npm run test:rules"
+    "verify:all": "npm run verify && npm run analytics:verify && npm run test:rules && npm run test:functions",
+    "test:functions": "npm run test:functions --workspace @accident-black-spot-detection/firebase"
   },
   "devDependencies": {
     "prettier": "^3.9.6"

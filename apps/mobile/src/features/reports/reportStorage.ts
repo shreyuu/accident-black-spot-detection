@@ -22,8 +22,12 @@ import { logger } from '@/utils/logger';
  * The cost of that ordering is an orphaned object when a user abandons a report
  * after picking a photo. That is deliberate — a stray image is a storage-cost
  * problem, a report with broken image links is a moderation problem.
- * TODO(phase-12): sweep unreferenced objects with a scheduled Cloud Function,
- * alongside the account-deletion cascade.
+ *
+ * Phase 12 collects those orphans: `sweepOrphanedImages` in the functions
+ * workspace removes anything unreferenced for more than 24 hours. The grace
+ * period is generous on purpose — an object uploaded ten seconds ago is
+ * *expected* to be unreferenced, because the user is still typing the
+ * description, and deleting it would strip evidence from a live submission.
  */
 
 export const REPORT_IMAGES_PREFIX = 'incidentReports';

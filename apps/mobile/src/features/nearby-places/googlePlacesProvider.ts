@@ -1,76 +1,72 @@
+import { httpsCallable } from 'firebase/functions';
+
 import { env } from '@/config/env';
 import {
   includedTypesFor,
   mapGooglePlacesResponse,
 } from '@/features/nearby-places/googlePlacesMapping';
-import { requestJson } from '@/features/nearby-places/httpJson';
 import type {
   NearbyPlace,
   NearbyPlacesProvider,
   NearbyPlacesQuery,
 } from '@/features/nearby-places/nearbyPlaceTypes';
+import { getFirebaseFunctions } from '@/services/firebase/app';
+import { AppError } from '@/utils/errors';
 
 /**
- * Nearby facilities from the Google Places API (New).
+ * Nearby facilities from the Google Places API, **through a server-side proxy**.
  *
- * **Optional, and off unless a key is configured.** It exists to prove the
- * provider abstraction is real rather than decorative, and to give better
- * coverage in regions where OpenStreetMap is thin. Without
- * `EXPO_PUBLIC_GOOGLE_PLACES_API_KEY`, `isAvailable()` returns false and the app
- * uses OpenStreetMap alone — which is the default configuration and the one the
- * repository ships.
+ * **Optional, and off unless enabled.** It exists to prove the provider
+ * abstraction is real rather than decorative, and to give better coverage in
+ * regions where OpenStreetMap is thin. With `EXPO_PUBLIC_GOOGLE_PLACES_PROXY_ENABLED`
+ * unset, `isAvailable()` returns false and the app uses OpenStreetMap alone —
+ * which is the default configuration and the one the repository ships.
  *
- * ## About the key — read this before setting one
+ * ## What Phase 12 changed, and why it mattered
  *
- * `EXPO_PUBLIC_*` values are inlined into the JavaScript bundle at build time
- * and are trivially recoverable from a shipped app. **This key is not a secret
- * and cannot be made one by any client-side means.** It is public configuration
- * that happens to be billable, so the protection has to come from restrictions
- * on the key itself, not from hiding it:
+ * Until Phase 12 this file called `places.googleapis.com` directly with
+ * `EXPO_PUBLIC_GOOGLE_PLACES_API_KEY`. Every `EXPO_PUBLIC_*` value is inlined
+ * into the JavaScript bundle at build time and can be extracted from a shipped
+ * app in minutes, so that key was **public, billable configuration** — the best
+ * available mitigation was restricting it by bundle id and capping the daily
+ * quota, because secrecy is simply not achievable client-side.
  *
- *   - restrict it by application (iOS bundle id / Android package name and
- *     signing certificate) in the Google Cloud console;
- *   - restrict it to the Places API alone;
- *   - set a daily quota cap, so a leak is bounded in cost rather than open-ended.
+ * The call now goes to the `nearbyPlacesProxy` Cloud Function, which holds the
+ * key in Secret Manager. No billable credential is in the bundle at all, which
+ * is a different thing from a well-restricted one. The function also bounds the
+ * radius and the place types, so the proxy cannot be turned into a general
+ * Places gateway on this project's billing account.
  *
- * The genuinely private alternative is to proxy the call through a server that
- * holds the key. The analytics service arriving in Phase 10 is the natural home
- * for that, and it is the right answer for a production deployment.
+ * ## What is unchanged
  *
- * TODO(phase-12): move this behind a server-side proxy as part of the security
- * review, so no billable credential ships in the client at all.
+ * `mapGooglePlacesResponse` still runs here, on the raw Places response the
+ * proxy forwards. It is the piece that knows how a Places record becomes a
+ * `NearbyPlace`, it is already tested, and moving it to the server would either
+ * duplicate it or strand it — so the function stays as thin as the one job it
+ * exists for: holding the credential.
+ *
+ * The coordinates sent are rounded to five decimal places, and the proxy rounds
+ * them again. A third party does not need the user's position to five decimal
+ * places to find a hospital, and a proxy that trusted its caller to have rounded
+ * would not be a privacy control.
  */
 
-const ENDPOINT = 'https://places.googleapis.com/v1/places:searchNearby';
+/** Callable name. Must match the export in `functions/src/index.ts`. */
+const PROXY_FUNCTION = 'nearbyPlacesProxy';
 
-/**
- * Requested fields.
- *
- * Google bills by field mask, so this asks for exactly what `NearbyPlace` uses
- * and nothing else. Requesting `places.*` is both expensive and a request for
- * more personal-adjacent data than the feature needs.
- */
-const FIELD_MASK = [
-  'places.id',
-  'places.displayName',
-  'places.formattedAddress',
-  'places.location',
-  'places.types',
-  'places.nationalPhoneNumber',
-  'places.internationalPhoneNumber',
-].join(',');
-
-const REQUEST_TIMEOUT_MS = 8000;
-
-/** Google's own cap for this endpoint. */
-const MAX_RESULT_COUNT = 20;
-
-/** The maximum radius the endpoint accepts, in metres. */
+/** The field mask and result cap now live in the function, alongside the key. */
 const MAX_RADIUS_M = 50_000;
 
+/**
+ * Whether to attempt the proxy.
+ *
+ * The app cannot know whether the *server* has a key, so this only reports
+ * whether the proxy should be tried. A server with no key answers
+ * `failed-precondition`, the provider throws, and `nearbyPlacesService` moves on
+ * to OpenStreetMap — which is exactly the degradation the chain exists for.
+ */
 export function isGooglePlacesConfigured(): boolean {
-  const key = env.googlePlacesApiKey;
-  return key !== undefined && key.length > 0;
+  return env.googlePlacesProxyEnabled;
 }
 
 export const googlePlacesProvider: NearbyPlacesProvider = {
@@ -80,51 +76,46 @@ export const googlePlacesProvider: NearbyPlacesProvider = {
   isAvailable: isGooglePlacesConfigured,
 
   async search(query: NearbyPlacesQuery): Promise<NearbyPlace[]> {
-    const key = env.googlePlacesApiKey;
-    if (key === undefined || key.length === 0) {
+    if (!env.googlePlacesProxyEnabled) {
       // Should be unreachable — the service checks `isAvailable` first — but a
       // provider that silently returned [] here would look like "nothing
       // nearby" rather than "not configured".
-      throw new Error('Google Places is not configured.');
+      throw new AppError('unavailable', 'Nearby places are not available right now.', {
+        retryable: false,
+        technicalMessage: 'googlePlacesProvider.search called while the proxy is disabled.',
+      });
     }
 
     if (query.categories.length === 0) {
       return [];
     }
 
-    const body = JSON.stringify({
-      includedTypes: includedTypesFor(query.categories),
-      maxResultCount: MAX_RESULT_COUNT,
-      locationRestriction: {
-        circle: {
-          center: {
-            // Rounded like the Overpass query: a third party does not need the
-            // user's position to five decimal places to find a hospital.
-            latitude: Number(query.centre.latitude.toFixed(5)),
-            longitude: Number(query.centre.longitude.toFixed(5)),
-          },
-          radius: Math.min(Math.round(query.radiusM), MAX_RADIUS_M),
-        },
-      },
-    });
+    const callProxy = httpsCallable<Record<string, unknown>, unknown>(
+      getFirebaseFunctions(),
+      PROXY_FUNCTION,
+    );
 
-    const response = await requestJson({
-      url: ENDPOINT,
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        // Header rather than a query parameter, deliberately: a key in a URL is
-        // written to every proxy log and analytics trace along the way.
-        'X-Goog-Api-Key': key,
-        'X-Goog-FieldMask': FIELD_MASK,
-      },
-      body,
-      timeoutMs: REQUEST_TIMEOUT_MS,
-      ...(query.signal === undefined ? {} : { signal: query.signal }),
-      // Never interpolate the key into a label; these reach the logs.
-      providerLabel: 'Google Places',
-    });
+    try {
+      const result = await callProxy({
+        // Rounded like the Overpass query. The proxy rounds again — see the
+        // module note on why both.
+        latitude: Number(query.centre.latitude.toFixed(5)),
+        longitude: Number(query.centre.longitude.toFixed(5)),
+        radiusM: Math.min(Math.round(query.radiusM), MAX_RADIUS_M),
+        includedTypes: includedTypesFor(query.categories),
+      });
 
-    return mapGooglePlacesResponse(response);
+      return mapGooglePlacesResponse(result.data);
+    } catch (error) {
+      // Thrown, never swallowed. `nearbyPlacesService` treats a throw as
+      // "this provider failed, try the next one", and an empty array as the
+      // honest answer "there is nothing nearby". Confusing the two would make a
+      // misconfiguration look like an empty neighbourhood.
+      throw new AppError('unavailable', 'Nearby places could not be looked up right now.', {
+        retryable: true,
+        cause: error,
+        technicalMessage: `${PROXY_FUNCTION} failed.`,
+      });
+    }
   },
 };

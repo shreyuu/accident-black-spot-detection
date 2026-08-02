@@ -57,7 +57,18 @@ missing rule fails closed rather than open.
 | Storage `incidentReports/{uid}/{file}` | Phase 5  | ✅ Implemented |
 | `emergencyContacts`                    | Phase 6  | ✅ Implemented |
 | `adminAuditLogs`                       | Phase 7  | ✅ Implemented |
+| `blackSpotCandidates`                  | Phase 10 | ✅ Implemented |
+| `analysisJobs`                         | Phase 10 | ✅ Implemented |
+| `reportRateLimits`                     | Phase 12 | ✅ Implemented |
+| `reportFingerprints`                   | Phase 12 | ✅ Implemented |
+| `deletedAccounts`                      | Phase 12 | ✅ Implemented |
 | Storage (everything else)              | —        | ⬜ Denied      |
+
+`tests/coverage.test.mjs` asserts this table cannot silently go stale: every name in `COLLECTIONS`
+(`packages/shared-types/src/vocabulary.ts`) must have a `match` block, and every `match` block must
+correspond to a name the codebase uses. A collection with no rule is denied by the catch-all — which
+fails closed, but silently, and the resulting PERMISSION_DENIED says nothing about which rule is
+missing.
 
 Automated rules tests using `@firebase/rules-unit-testing` landed in Phase 7 — see `firebase/tests/`.
 Run them with the emulators up:
@@ -66,14 +77,30 @@ Run them with the emulators up:
 npm run test:rules
 ```
 
-43 assertions covering roles, ownership and the audit trail. They are deliberately **not** part of
+145 assertions covering roles, ownership, rate limiting, duplicate detection, reporter privacy, the
+Cloud Storage upload rules and the deny-all catch-all itself. They are deliberately **not** part of
 `npm run verify`, which must stay runnable without an emulator; `npm run verify:all` runs both.
+
+There is a second, heavier suite:
+
+```bash
+npm run test:functions
+```
+
+It needs the Auth, Firestore, Storage **and Functions** emulators, and it exercises account deletion
+and data export end to end against real accounts. That is the only thing that can support the claim
+"deletion actually removes the data" — the unit tests in `functions/src/__tests__/` prove what the
+_policy_ is, and a deletion routine that silently missed a collection would pass every one of them.
+It is how the wrong-Storage-bucket bug was found; see `functions/src/firebaseAdmin.ts`.
 
 Note the suite runs with `--test-concurrency=1`. Every file shares one emulator and one project id,
 so a parallel `clearFirestore()` wipes another file's fixtures mid-test — which is exactly what
 happened before the flag was added.
 
-Phase 12 reviews the complete rule set.
+Storage tests carry a wrinkle worth knowing: `env.clearStorage()` does **not** empty the bucket the
+test contexts write to, so `tests/storage.test.mjs` derives its uids from the clock and every run
+uses paths nothing has used before. Without that the suite passes once and fails for ever after,
+because the `resource == null` overwrite guard refuses the second run's uploads.
 
 The Phase 5 and 6 rules were originally verified with throwaway scripts driving the real client SDK
 (34 and 27 checks). Those proved the rules worked at the time and nothing afterwards; the properties
@@ -88,8 +115,23 @@ worth keeping are now pinned in `firebase/tests/`.
 - `id`, `email` and `createdAt` are immutable after creation.
 - Profile shape and the 100–2000 m alert radius are validated server-side as well as client-side, so
   a tampered client cannot store values that break alerting.
-- Client-side deletes are refused; account deletion goes through a Cloud Function in Phase 12 so the
-  Auth record and owned data are removed together instead of being orphaned.
+- Client-side deletes are refused; account deletion goes through the `deleteAccount` Cloud Function
+  so the Auth record, the Storage objects and the owned documents are removed together instead of
+  being orphaned.
+- Every client-written shape is closed with `hasOnly`, so a document cannot carry fields nobody
+  validates — without it, a profile is an unbounded write target and the database is free storage.
+- Every timestamp a client writes must equal `request.time`, which only `serverTimestamp()`
+  satisfies. A device clock can be wrong and can be set deliberately: without this a report could be
+  backdated to distort the Phase 10 clustering, or a rate-limit counter forward-dated to escape its
+  own window.
+
+### Submission limits (Phase 12)
+
+Report creation is refused unless the caller's rate-limit counter and duplicate fingerprint are
+written in the **same commit**, which the rules detect with `getAfter()` plus `== request.time`.
+This is how a limit is enforced on a document the limited party writes themselves. The mechanism,
+the numbers and every bypass that was closed are documented in
+[`docs/security-and-privacy.md`](../docs/security-and-privacy.md).
 
 ### Incident reports (Phase 5)
 

@@ -12,7 +12,9 @@ import {
   type RiskLevel,
 } from '@accident-black-spot-detection/shared-types';
 
+import { serverEnv } from '@/lib/env';
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
+import { toPublicReporter, type PublicReporter } from '@/lib/reporterPrivacy';
 
 /**
  * Server-side reads for the dashboard.
@@ -41,7 +43,20 @@ function asNumber(value: unknown, fallback = 0): number {
 
 export interface ReportRow {
   id: string;
-  reporterId: string;
+  /**
+   * The reporter, pseudonymised.
+   *
+   * There is deliberately **no `reporterId`** on this type. These rows are
+   * handed to client components, and Next.js serialises a client component's
+   * props into the HTML — so a raw uid here is a uid in the page source of every
+   * moderator's browser, which is precisely what `firestore.rules` refuses to
+   * any client and what the Admin SDK path has to refuse for itself. See
+   * `lib/reporterPrivacy.ts`.
+   *
+   * Its absence from the type is the control: reintroducing the uid requires
+   * editing this interface, at which point somebody is reading this comment.
+   */
+  reporter: PublicReporter;
   type: IncidentType;
   severity: IncidentSeverity;
   status: ReportStatus;
@@ -50,7 +65,6 @@ export interface ReportRow {
   longitude: number;
   imageUrls: string[];
   moderationNotes: string | null;
-  reviewedBy: string | null;
   occurredAt: string | null;
   createdAt: string | null;
 }
@@ -88,7 +102,7 @@ export interface AuditRow {
  * reports nobody got to, and the person who waited longest is the one most
  * entitled to an answer. Uses the `status + createdAt` index added in Phase 5.
  */
-export async function fetchPendingReports(): Promise<ReportRow[]> {
+export async function fetchPendingReports(actorUid: string): Promise<ReportRow[]> {
   const snapshot = await getAdminFirestore()
     .collection(COLLECTIONS.incidentReports)
     .where('status', '==', 'pending')
@@ -96,11 +110,11 @@ export async function fetchPendingReports(): Promise<ReportRow[]> {
     .limit(PAGE_SIZE)
     .get();
 
-  return snapshot.docs.map((document) => toReportRow(document.id, document.data()));
+  return snapshot.docs.map((document) => toReportRow(document.id, document.data(), actorUid));
 }
 
 /** Recently decided reports, so a moderator can see the effect of their work. */
-export async function fetchDecidedReports(): Promise<ReportRow[]> {
+export async function fetchDecidedReports(actorUid: string): Promise<ReportRow[]> {
   const snapshot = await getAdminFirestore()
     .collection(COLLECTIONS.incidentReports)
     .where('status', 'in', ['approved', 'rejected'])
@@ -108,16 +122,24 @@ export async function fetchDecidedReports(): Promise<ReportRow[]> {
     .limit(20)
     .get();
 
-  return snapshot.docs.map((document) => toReportRow(document.id, document.data()));
+  return snapshot.docs.map((document) => toReportRow(document.id, document.data(), actorUid));
 }
 
-function toReportRow(id: string, data: Record<string, unknown>): ReportRow {
+/**
+ * One Firestore document as a row safe to render.
+ *
+ * `actorUid` is required rather than optional on purpose: "is this the signed-in
+ * moderator's own report" can only be answered where both real uids are in
+ * scope, and that is here, on the server. Making it optional would let a caller
+ * build a row that silently reported every report as somebody else's — and a
+ * moderator would then be offered the controls to approve their own.
+ */
+function toReportRow(id: string, data: Record<string, unknown>, actorUid: string): ReportRow {
   const notes = asString(data.moderationNotes);
-  const reviewedBy = asString(data.reviewedBy);
 
   return {
     id,
-    reporterId: asString(data.reporterId),
+    reporter: toPublicReporter(asString(data.reporterId), actorUid, serverEnv.reporterSalt),
     type: asString(data.type, 'other') as IncidentType,
     severity: asString(data.severity, 'low') as IncidentSeverity,
     status: asString(data.status, 'pending') as ReportStatus,
@@ -128,7 +150,10 @@ function toReportRow(id: string, data: Record<string, unknown>): ReportRow {
       ? data.imageUrls.filter((url): url is string => typeof url === 'string')
       : [],
     moderationNotes: notes.length > 0 ? notes : null,
-    reviewedBy: reviewedBy.length > 0 ? reviewedBy : null,
+    // `reviewedBy` is deliberately not carried. It is the deciding moderator's
+    // uid, nothing renders it, and it would ride into the page source alongside
+    // the reporter's — the audit log is where "who decided what" belongs, and it
+    // shows an email to moderators only.
     occurredAt: toIso(data.occurredAt),
     createdAt: toIso(data.createdAt),
   };

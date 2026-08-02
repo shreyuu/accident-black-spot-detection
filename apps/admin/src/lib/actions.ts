@@ -8,6 +8,7 @@ import { z } from 'zod';
 import {
   buildReportModerationWrite,
   canManageBlackSpots,
+  canManageRoles,
   COLLECTIONS,
   evaluateModerationDecision,
   findDisallowedModerationFields,
@@ -16,11 +17,12 @@ import {
   BLACK_SPOT_CATEGORIES,
   BLACK_SPOT_RADIUS_BOUNDS_M,
   RISK_LEVELS,
+  USER_ROLES,
   type ReportStatus,
 } from '@accident-black-spot-detection/shared-types';
 
 import { stageAuditEntry } from '@/lib/auditLog';
-import { getAdminFirestore } from '@/lib/firebaseAdmin';
+import { getAdminAuth, getAdminFirestore } from '@/lib/firebaseAdmin';
 import { getDashboardActor } from '@/lib/session';
 
 /**
@@ -367,5 +369,127 @@ export async function setBlackSpotActive(formData: FormData): Promise<ActionResu
   } catch (error) {
     console.error('[actions] setBlackSpotActive failed', error);
     return { ok: false, message: 'That change could not be saved. Please try again.' };
+  }
+}
+
+/**
+ * Grant or withdraw a role (Phase 12).
+ *
+ * Resolves the `TODO(phase-12)` in `firebase/scripts/grantRole.mjs`. That script
+ * remains, and remains necessary: **the first administrator has to come from
+ * outside the system**, because a dashboard that could create its own first
+ * admin would be a dashboard anyone could create an admin in. This action
+ * promotes subsequent operators, and only an existing admin may call it.
+ *
+ * ## The three things that happen together
+ *
+ * 1. **The custom claim is set.** The claim is the authority everywhere — the
+ *    Firestore rules read `request.auth.token.role`, and `getActor` reads the
+ *    verified token. Nothing consults the Firestore copy for an access decision.
+ * 2. **The profile's `role` field is updated**, for display only. If the two ever
+ *    disagree the claim wins and the document is merely wrong, which grants
+ *    nothing.
+ * 3. **Refresh tokens are revoked.** Without this a demotion would not take
+ *    effect until the target's session cookie expired — up to twelve hours in
+ *    which somebody whose access had just been withdrawn could still moderate.
+ *    For an account demoted *because* of what it was doing, that window is the
+ *    entire point of demoting it. `verifySessionCookie(cookie, true)` in
+ *    `lib/session.ts` is the other half: it re-checks revocation per request.
+ *
+ * The audit entry is written in the same transaction as the profile update, as
+ * every privileged action in this file is.
+ */
+export async function setUserRole(formData: FormData): Promise<ActionResult> {
+  const actor = await getDashboardActor();
+  if (actor === null) {
+    return { ok: false, message: 'Your session has expired. Sign in again.' };
+  }
+
+  if (!canManageRoles(actor.role)) {
+    return { ok: false, message: 'Only an administrator can change roles.' };
+  }
+
+  const parsed = z
+    .object({
+      email: z.string().trim().toLowerCase().email(),
+      role: z.enum(USER_ROLES),
+    })
+    .safeParse({ email: formData.get('email'), role: formData.get('role') });
+
+  if (!parsed.success) {
+    return { ok: false, message: 'Enter a valid email address and choose a role.' };
+  }
+
+  const { email, role } = parsed.data;
+
+  let target;
+  try {
+    target = await getAdminAuth().getUserByEmail(email);
+  } catch {
+    // Said plainly. This is an admin-only screen reached by someone who already
+    // knows the address they typed, so "no such account" reveals nothing they
+    // did not already assume — and "something went wrong" would send them
+    // hunting for a fault that is really a typo.
+    return {
+      ok: false,
+      message: `No account exists for ${email}. They need to register in the app first.`,
+    };
+  }
+
+  /**
+   * An admin may not change their own role.
+   *
+   * The same principle as not approving your own report, and it protects against
+   * the duller failure too: an admin who demotes themselves by accident locks
+   * everyone out of role management, and the only way back is the bootstrap
+   * script and a shell.
+   */
+  if (target.uid === actor.uid) {
+    return { ok: false, message: 'You cannot change your own role. Ask another administrator.' };
+  }
+
+  try {
+    // The claim first. If the transaction below fails, the worst outcome is a
+    // profile document that disagrees with the claim — and the claim is the one
+    // that decides, so access is never left in a state nobody intended.
+    await getAdminAuth().setCustomUserClaims(target.uid, { role });
+
+    const firestore = getAdminFirestore();
+    await firestore.runTransaction(async (transaction) => {
+      const reference = firestore.collection(COLLECTIONS.users).doc(target.uid);
+      const snapshot = await transaction.get(reference);
+
+      if (snapshot.exists) {
+        transaction.update(reference, { role, updatedAt: FieldValue.serverTimestamp() });
+      }
+
+      stageAuditEntry(firestore, transaction, {
+        actorId: actor.uid,
+        actorEmail: actor.email,
+        actorRole: actor.role,
+        action: 'role.granted',
+        targetType: 'user',
+        targetId: target.uid,
+        summary: `Set ${email} to ${role}`,
+        details: { role, email },
+      });
+    });
+
+    // After the claim is set, so the next token they mint carries the new role.
+    await getAdminAuth().revokeRefreshTokens(target.uid);
+
+    revalidatePath('/roles');
+    revalidatePath('/audit');
+
+    return {
+      ok: true,
+      message:
+        role === 'user'
+          ? `${email} is no longer a moderator. Any session they had is already invalid.`
+          : `${email} is now ${role === 'admin' ? 'an administrator' : 'a moderator'}. They will need to sign in again.`,
+    };
+  } catch (error) {
+    console.error('[actions] setUserRole failed', error);
+    return { ok: false, message: 'That role change could not be saved. Please try again.' };
   }
 }
