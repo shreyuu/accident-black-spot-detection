@@ -14,7 +14,7 @@ alerts, supports incident reporting, and provides emergency SOS assistance.
 
 ## Build status
 
-This project is being built in phases. **Phase 12 of 15 is complete.**
+This project is being built in phases. **Phase 13 of 15 is complete.**
 
 | Phase | Scope                                    | Status                    |
 | ----- | ---------------------------------------- | ------------------------- |
@@ -31,7 +31,7 @@ This project is being built in phases. **Phase 12 of 15 is complete.**
 | 10    | Spatial clustering, ECLAT, risk scoring  | ✅ Complete               |
 | 11    | Settings, offline support, accessibility | ✅ Complete               |
 | 12    | Security, privacy, abuse prevention      | ✅ Complete               |
-| 13    | Testing and QA                           | ⬜ Not started            |
+| 13    | Testing and QA                           | ✅ Complete               |
 | 14    | CI/CD, builds, release preparation       | ⬜ Not started            |
 | 15    | Documentation and demonstration          | ⬜ Not started            |
 
@@ -369,6 +369,23 @@ Everything at once, emulators running:
 npm run verify:all
 ```
 
+Coverage:
+
+```bash
+npm run test --workspace @accident-black-spot-detection/mobile -- --coverage
+```
+
+Mobile line coverage is **48%**, and the shape matters more than the number: the pure,
+safety-critical cores — the proximity engine, the draft queue, the report limits, the moderation
+rules — are covered thoroughly, while presentational components and hooks are thin. Phase 13 added
+screen-level tests for the warning banner specifically because a regression there is harmful rather
+than merely ugly.
+
+Behaviour that automated tests cannot reach — real permissions, real OS dialogs, real process
+death — is covered by [`docs/manual-test-plan.md`](docs/manual-test-plan.md): twenty scenarios,
+twelve executed and recorded on an Android device build, eight documented with steps for a physical
+device.
+
 Scan for credentials in anything git is carrying, including files not yet committed:
 
 ```bash
@@ -409,7 +426,7 @@ npm run format
 
 ## Known limitations
 
-- **Feature work is incomplete by design.** Only Phases 0–12 are done; see the table above.
+- **Feature work is incomplete by design.** Only Phases 0–13 are done; see the table above.
 - **The first administrator is still granted by a script.** `npm run grant-role` uses the Admin SDK.
   Phase 12 added a `/roles` screen for every _subsequent_ role change, audited and with immediate
   revocation, but the bootstrap has to come from outside the system — a dashboard that could create
@@ -446,7 +463,11 @@ npm run format
   removes pending and rejected reports, and anonymises approved ones — see
   `docs/security-and-privacy.md`.
 - **Android map tiles require your own Google Maps Platform key** — see the note in Build status.
-  Everything else on Android works; only the tiles and map overlays are affected.
+  Confirmed in Phase 13 on a _development build_, not only under Expo Go: without
+  `EXPO_PUBLIC_GOOGLE_MAPS_API_KEY_ANDROID` the whole map surface stays blank, so the markers and
+  warning-radius circles are invisible along with the tiles. The data layer is unaffected — the
+  header still reported "5 black spots nearby" and proximity warnings still fired — so this is a
+  display-only limitation, but it makes the map screen impossible to assess visually without a key.
 - **Background warnings are best-effort, and cannot be otherwise.** Neither platform guarantees a
   background location update will arrive, or arrive promptly. iOS defers and coalesces them and
   pauses them when it decides you have stopped moving; Android's Doze and manufacturer battery
@@ -512,6 +533,20 @@ npm run format
 - **Emulators only so far.** Authentication and Firestore have been exercised against the local
   Emulator Suite, not a real Firebase project. Pointing at production is a config change
   (`.env`), but that path has not been tested.
+- **Registration does not submit on the iOS simulator.** Phase 13 narrowed this to iOS alone: the
+  same form submits correctly on an Android device build, so the form logic and the Firebase call
+  are sound and the fault is in the iOS input path. Undiagnosed beyond that.
+- **Eight of the twenty manual scenarios have not been executed.** They need a physical device, a
+  SIM, or a destructive action against a real account — background notification delivery, the draft
+  queue surviving a force-quit, nearby help, contact CRUD, photo upload retry, the rate-limit and
+  duplicate refusal copy, and account deletion. Steps for each are in
+  [`docs/manual-test-plan.md`](docs/manual-test-plan.md). Account deletion and the submission limits
+  are covered end to end by `npm run test:functions` and `npm run test:rules` respectively, so what
+  is unverified there is the wording a user sees, not the enforcement.
+- **A development build silently falls back to a stale cached bundle when Metro is unreachable.**
+  It keeps running and shows screens from whenever that bundle was built, so anything observed after
+  a "Cannot connect to Expo CLI" toast must be discarded. `adb reverse tcp:8081 tcp:8081` reconnects
+  it. This cost real time during Phase 13.
 - **Email addresses are not verified.** An account is usable immediately after registration.
   Requiring verification is a product decision that was left open rather than taken in Phase 12: it
   would bar a bystander at a crash from reporting until they had found their inbox.

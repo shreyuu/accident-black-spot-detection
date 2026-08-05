@@ -126,8 +126,16 @@ service cloud.firestore {
     // `role` is the important one: without this, any user could make themselves
     // an admin with a single client-side write and then approve their own
     // reports. Role changes happen only through the Admin SDK (Phase 7).
-    function hasNoPrivilegedFields(data) {
-      return !data.keys().hasAny(['role']);
+    //
+    // Takes the **Set** returned by `diff().affectedKeys()`, not a Map. It read
+    // `data.keys().hasAny(...)` from Phase 2 until Phase 13, and a Set has no
+    // `keys()` — so the rule raised "Function not found: keys", every profile
+    // update was denied, and *saving a preference to the account had never once
+    // worked*. Nothing caught it: the rules suite had no `users` update test,
+    // and Phase 11's local mirror swallowed the failure into a soft "saved on
+    // this device, but not to your account yet". It took running the app.
+    function hasNoPrivilegedFields(affectedKeys) {
+      return !affectedKeys.hasAny(['role']);
     }
 
     function isValidProfileShape(data) {
