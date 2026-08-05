@@ -324,3 +324,111 @@ describe('a profile cannot be used as free storage', () => {
     await assertFails(asUser(env, 'owner').doc('users/owner').delete());
   });
 });
+
+describe('a user can actually save their own preferences', () => {
+  /**
+   * The regression suite for a bug that survived from Phase 2 to Phase 13.
+   *
+   * `hasNoPrivilegedFields` was called with the Set from
+   * `diff().affectedKeys()` but implemented as though it received a Map, so it
+   * invoked `keys()` on a Set. The rules engine raised "Function not found:
+   * keys", which is evaluated as a denial — so **every** profile update was
+   * refused and saving a preference to the account had never worked.
+   *
+   * Nothing caught it. There was no `users` update test at all, and the app
+   * swallows the failure into a soft "saved on this device, but not to your
+   * account yet" because Phase 11 mirrors preferences locally. It surfaced only
+   * when the app was run on a device in Phase 13 and the warning appeared in the
+   * log.
+   *
+   * The lesson is in the shape of these tests: the happy path is asserted first,
+   * because a rule that denies everything passes every test that only checks
+   * that bad writes are refused.
+   */
+
+  const profile = {
+    id: 'owner',
+    name: 'Ada Lovelace',
+    email: 'ada@example.test',
+    role: 'user',
+    alertRadiusM: 1000,
+    alertsEnabled: true,
+    backgroundMonitoringEnabled: false,
+    hapticsEnabled: true,
+    soundEnabled: true,
+    darkModePreference: 'system',
+  };
+
+  beforeEach(async () => {
+    await seed(env, 'users/owner', {
+      ...profile,
+      createdAt: new Date('2026-01-01'),
+      updatedAt: new Date('2026-01-01'),
+    });
+  });
+
+  it('accepts a preference change — the case that was broken', async () => {
+    await assertSucceeds(
+      asUser(env, 'owner')
+        .doc('users/owner')
+        .update({ alertRadiusM: 500, darkModePreference: 'dark', updatedAt: serverTimestamp() }),
+    );
+  });
+
+  it('accepts every preference the settings screen can change', async () => {
+    await assertSucceeds(
+      asUser(env, 'owner').doc('users/owner').update({
+        alertRadiusM: 250,
+        alertsEnabled: false,
+        soundEnabled: false,
+        hapticsEnabled: false,
+        backgroundMonitoringEnabled: true,
+        darkModePreference: 'light',
+        updatedAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it('still refuses a self-promotion to admin', async () => {
+    // The reason the helper exists. It must keep working now that it does.
+    await assertFails(
+      asUser(env, 'owner')
+        .doc('users/owner')
+        .update({ role: 'admin', updatedAt: serverTimestamp() }),
+    );
+  });
+
+  it('still refuses rewriting identity or backdating the account', async () => {
+    for (const change of [
+      { id: 'someone-else' },
+      { email: 'other@example.test' },
+      { createdAt: new Date('2020-01-01') },
+    ]) {
+      await assertFails(
+        asUser(env, 'owner')
+          .doc('users/owner')
+          .update({ ...change, updatedAt: serverTimestamp() }),
+      );
+    }
+  });
+
+  it('still refuses an alert radius outside the supported bounds', async () => {
+    // A tampered client must not be able to store a radius that makes alerting
+    // useless or unbearable.
+    for (const alertRadiusM of [50, 5000]) {
+      await assertFails(
+        asUser(env, 'owner')
+          .doc('users/owner')
+          .update({ alertRadiusM, updatedAt: serverTimestamp() }),
+      );
+    }
+  });
+
+  it('still refuses updating somebody else’s profile', async () => {
+    await assertFails(
+      asUser(env, 'intruder')
+        .doc('users/owner')
+        .update({ alertRadiusM: 500, updatedAt: serverTimestamp() }),
+    );
+  });
+});

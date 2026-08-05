@@ -26,6 +26,13 @@ module.exports = {
   transformIgnorePatterns: [
     'node_modules/(?!(?:.pnpm/)?((jest-)?react-native|@react-native(-community)?|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@sentry/react-native|native-base|react-native-svg|react-native-worklets|firebase|@firebase/.*))',
   ],
-  collectCoverageFrom: ['src/**/*.{ts,tsx}', '!src/**/*.d.ts', '!src/**/index.ts'],
+  collectCoverageFrom: [
+    'src/**/*.{ts,tsx}',
+    '!src/**/*.d.ts',
+    '!src/**/index.ts',
+    // Test scaffolding. Counting it would flatter the number without testing
+    // anything — see src/test-utils/render.tsx.
+    '!src/test-utils/**',
+  ],
   testPathIgnorePatterns: ['/node_modules/', '/ios/', '/android/', '/.expo/'],
 };
