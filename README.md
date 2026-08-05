@@ -122,17 +122,25 @@ or `active` field — so it could not satisfy the app's query even if copied acr
 an administrator's deliberate, audited act. See
 [`docs/eclat-methodology.md`](docs/eclat-methodology.md).
 
-> **‡ The Android development build compiles; the iOS one has not been built on this machine.** The
-> Android debug APK builds clean and carries `ACCESS_BACKGROUND_LOCATION`, `FOREGROUND_SERVICE` and
-> `FOREGROUND_SERVICE_LOCATION`, with `expo.modules.location.services.LocationTaskService` declared
-> as `foregroundServiceType="location"` — confirmed by dumping the built APK.
+> **‡ Both development builds now compile and run.** The Android debug APK builds clean and carries
+> `ACCESS_BACKGROUND_LOCATION`, `FOREGROUND_SERVICE` and `FOREGROUND_SERVICE_LOCATION`, with
+> `expo.modules.location.services.LocationTaskService` declared as `foregroundServiceType="location"`
+> — confirmed by dumping the built APK.
 >
-> On iOS the Xcode project generates correctly and CocoaPods installs, but `xcodebuild` then reports
-> no eligible destination: it says the iOS 26.5 platform is not installed and offers no simulator
-> destination at all, while the only simulator runtime present is iOS 26.2. Download the iOS platform
-> in Xcode ▸ Settings ▸ Components (or run `xcodebuild -downloadPlatform iOS`), then `npm run ios`.
-> Nothing in the app code is implicated: the generated `Info.plist` carries the `location` background
-> mode and all three location purpose strings, verified directly.
+> The iOS build compiled for the first time in Phase 13, and the blocker was never the project. Xcode
+> offered **no simulator destinations at all** — not with a booted simulator, not with
+> `generic/platform=iOS Simulator`, not with `-sdk iphonesimulator` — because Xcode's **iOS Simulator
+> platform** ships separately from the SDK and was not installed. `xcodebuild -showsdks` listed
+> `iphonesimulator26.5` the whole time, which is why every destination-based diagnostic came back
+> empty rather than explaining itself. One command fixes it, needs no password, and downloads
+> 8.52 GB:
+>
+> ```
+> xcodebuild -downloadPlatform iOS
+> ```
+>
+> Then `npm run ios`. On a nearly-full disk, free space first — `xcrun simctl runtime list` and
+> `xcrun simctl runtime delete <id>` remove an old runtime, which can be re-downloaded later.
 
 > **† Android map tiles need your own Google Maps API key.** The map screen — permission flow,
 > location acquisition, and the rest of the app — works on Android, but the map _tiles_ render as a
@@ -533,9 +541,10 @@ npm run format
 - **Emulators only so far.** Authentication and Firestore have been exercised against the local
   Emulator Suite, not a real Firebase project. Pointing at production is a config change
   (`.env`), but that path has not been tested.
-- **Registration does not submit on the iOS simulator.** Phase 13 narrowed this to iOS alone: the
-  same form submits correctly on an Android device build, so the form logic and the Firebase call
-  are sound and the fault is in the iOS input path. Undiagnosed beyond that.
+- **The old "registration does not submit on iOS" note is no longer reproducible.** Phase 13 ran the
+  flow on iOS 26.5 and it submitted and signed in, exactly as on Android. The note predates several
+  phases of work on the form, nothing was knowingly done to fix it, and the cause was never
+  diagnosed — so it is recorded as no-longer-reproducible rather than fixed.
 - **Eight of the twenty manual scenarios have not been executed.** They need a physical device, a
   SIM, or a destructive action against a real account — background notification delivery, the draft
   queue surviving a force-quit, nearby help, contact CRUD, photo upload retry, the rate-limit and

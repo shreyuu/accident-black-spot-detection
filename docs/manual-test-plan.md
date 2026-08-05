@@ -71,45 +71,65 @@ Note the argument order: `geo fix` takes **longitude first**.
 
 ## Results
 
-| #   | Scenario                               | Gate         | Result                |
-| --- | -------------------------------------- | ------------ | --------------------- |
-| 1   | Register a new account                 | Phase 2      | ✅ Pass               |
-| 2   | Session survives process death         | Phase 2 (H1) | ✅ Pass               |
-| 3   | Permission rationale precedes prompt   | Phase 3      | ✅ Pass               |
-| 4   | Only verified+active spots load        | Phase 4      | ✅ Pass               |
-| 5   | Proximity warning fires                | Phase 4      | ✅ Pass               |
-| 6   | Overlapping zones fold into one        | Phase 4      | ✅ Pass               |
-| 7   | Empty state is honest                  | Safety rule  | ✅ Pass               |
-| 8   | Unapproved report never published      | Phase 5      | ✅ Pass               |
-| 9   | SOS makes no delivery claim            | Phase 6 (M7) | ✅ Pass               |
-| 10  | Settings render with correct defaults  | Phase 11     | ✅ Pass               |
-| 11  | Preference saves to the account        | Phase 11     | ❌ **Failed** → fixed |
-| 12  | Export and delete screen               | Phase 12     | ✅ Pass               |
-| 13  | Data export returns the account's data | Phase 12     | ✅ Pass               |
-| 14  | Background warning while app closed    | Phase 8      | ⬜ Not executed       |
-| 15  | Draft survives a force-quit            | Phase 11     | ⬜ Not executed       |
-| 16  | Nearby help list                       | Phase 9      | ⬜ Not executed       |
-| 17  | Emergency contact CRUD                 | Phase 6      | ⬜ Not executed       |
-| 18  | Report with photo, upload retry        | Phase 5      | ⬜ Not executed       |
-| 19  | Rate limit and duplicate refusals      | Phase 12     | ⬜ Not executed       |
-| 20  | Account deletion erases the data       | Phase 12     | ⬜ Not executed       |
+| #   | Scenario                               | Gate         | Android         | iOS             |
+| --- | -------------------------------------- | ------------ | --------------- | --------------- |
+| 1   | Register a new account                 | Phase 2      | ✅ Pass         | ✅ Pass         |
+| 2   | Session survives process death         | Phase 2 (H1) | ✅ Pass         | ✅ Pass         |
+| 3   | Permission rationale precedes prompt   | Phase 3      | ✅ Pass         | ✅ Pass         |
+| 4   | Only verified+active spots load        | Phase 4      | ✅ Pass         | ✅ Pass         |
+| 5   | Proximity warning fires                | Phase 4      | ✅ Pass         | ✅ Pass         |
+| 6   | Overlapping zones fold into one        | Phase 4      | ✅ Pass         | ✅ Pass         |
+| 7   | Empty state is honest                  | Safety rule  | ✅ Pass         | ✅ Pass         |
+| 8   | Unapproved report never published      | Phase 5      | ✅ Pass         | ⬜ Not executed |
+| 9   | SOS makes no delivery claim            | Phase 6 (M7) | ✅ Pass         | ⬜ Not executed |
+| 10  | Settings render with correct defaults  | Phase 11     | ✅ Pass         | ✅ Pass         |
+| 11  | Preference saves to the account        | Phase 11     | ❌ → fixed      | ✅ Pass         |
+| 12  | Export and delete screen               | Phase 12     | ✅ Pass         | ✅ Pass         |
+| 13  | Data export returns the account's data | Phase 12     | ✅ Pass         | ✅ Pass         |
+| 14  | Background warning while app closed    | Phase 8      | ⬜ Not executed | ⬜ Not executed |
+| 15  | Draft survives a force-quit            | Phase 11     | ⬜ Not executed | ⬜ Not executed |
+| 16  | Nearby help list                       | Phase 9      | ⬜ Not executed | ⬜ Not executed |
+| 17  | Emergency contact CRUD                 | Phase 6      | ⬜ Not executed | ⬜ Not executed |
+| 18  | Report with photo, upload retry        | Phase 5      | ⬜ Not executed | ⬜ Not executed |
+| 19  | Rate limit and duplicate refusals      | Phase 12     | ⬜ Not executed | ⬜ Not executed |
+| 20  | Account deletion erases the data       | Phase 12     | ⬜ Not executed | ⬜ Not executed |
 
----
+### The map only renders on iOS
 
-## 1. Register a new account — ✅
+The single largest platform difference, and it is a **tooling** difference rather
+than a code one. iOS uses Apple Maps (the Phase 0 decision, taken to stay
+unblocked without a Google key), so the map surface renders with no credential:
+tiles, warning-radius circles and markers all appear. Android needs
+`EXPO_PUBLIC_GOOGLE_MAPS_API_KEY_ANDROID` and without it the whole surface stays
+blank — markers and circles included, not just tiles.
 
-**Why it matters.** The README records that "the registration screen would not
-submit on the iOS simulator", undiagnosed since Phase 2. Whether that is an iOS
-problem or a form problem changes what has to be fixed.
+So the marker design could be assessed for the first time on iOS, and it holds
+the safety rule: each marker is labelled **CRITICAL / HIGH / MEDIUM / LOW in
+words** as well as by colour.
+
+## 1. Register a new account — ✅ both platforms
+
+**Why it matters.** The README has recorded since Phase 2 that "the registration
+screen would not submit on the iOS simulator", undiagnosed.
 
 **Steps.** Launch → Create an account → fill name, email, password, confirm,
 accept terms → Create account.
 
-**Result.** Submitted and signed in. **The defect is iOS-only** — Android is
-unaffected, so the form logic and the Firebase call are sound and the fault lies
-in the iOS input path.
+**Result — Android.** Submitted and signed in.
 
-Two things were confirmed along the way:
+**Result — iOS.** **Also submitted and signed in.** The account
+`grace@example.test` was created with `role: "user"` and the app proceeded to the
+permission flow.
+
+> **Correction.** An earlier revision of this document concluded from the Android
+> run alone that "the defect is iOS-only". That was wrong. Running the same flow
+> on iOS 26.5 shows registration working there too, so the README's long-standing
+> note is **not reproducible** on the current codebase and toolchain. What
+> changed between then and now is not known — the note predates several phases of
+> work on the form — so it is recorded as no-longer-reproducible rather than
+> fixed, since nothing was knowingly done to fix it.
+
+Confirmed along the way, on both platforms:
 
 - inline validation is live and correct — a malformed address produced
   "Enter a valid email address, for example name@example.com" and blocked
@@ -214,7 +234,7 @@ warning cannot be switched off is present.
 
 ---
 
-## 11. Preference saves to the account — ❌ **failed, fixed, re-verified**
+## 11. Preference saves to the account — ❌ **failed on Android, fixed, verified on both**
 
 **This is the scenario that justified the device pass.**
 
@@ -247,8 +267,12 @@ Six regression tests were added in `firebase/tests/privacy.test.mjs`, the first
 of which asserts the **happy path** — a rule that denies everything passes every
 test that only checks refusals.
 
-**Re-verified.** After the fix, the same tap wrote `darkModePreference: "dark"`
-to the account and produced no warning.
+**Re-verified on both platforms.** After the fix, the same interaction wrote
+`darkModePreference: "dark"` to the account with no warning on Android, and on
+iOS wrote both `darkModePreference: "dark"` and `alertRadiusM: 500` with zero
+save failures in the log. The bug was never platform-specific — it was in the
+security rules, so it affected every client equally; Android simply happened to
+be where it was caught.
 
 ---
 
@@ -346,9 +370,39 @@ screen and no data remaining under that uid.
   ("persistence arrives in Phase 11") while claiming to be current. Anything
   observed after a "Cannot connect to Expo CLI" toast must be discarded.
   `adb reverse tcp:8081 tcp:8081` reconnects it.
+- **The iOS simulator's location resets to San Francisco** and ignores a
+  `simctl location set` issued before the app has resolved a first fix. Seed
+  where the simulator actually is, or set the location and then force a refetch
+  from the app's own locate control.
 - **Map tiles and overlays do not render without
-  `EXPO_PUBLIC_GOOGLE_MAPS_API_KEY_ANDROID`.** Previously recorded as an Expo Go
+  `EXPO_PUBLIC_GOOGLE_MAPS_API_KEY_ANDROID`** — Android only; iOS uses Apple Maps
+  and needs no key. Previously recorded as an Expo Go
   limitation; it applies to development builds too, and it hides the markers and
   radius circles as well as the tiles. The data layer is unaffected — the header
   still reported "5 black spots nearby" — so this is a display-only limitation,
   but it makes the map screen impossible to assess visually without a key.
+
+---
+
+## iOS-specific observations
+
+Recorded from the first successful iOS run of this project.
+
+- **The back button on a pushed screen reads "(tabs)".** Expo Router is using the
+  route-group directory name as the back title, so navigating Settings → Your
+  data shows a control labelled `(tabs)` where iOS convention expects the
+  previous screen's title. Cosmetic, iOS-only — Android renders a plain arrow and
+  is unaffected — but it exposes an internal directory name in the interface.
+- **The `Info.plist` usage string is correct and specific.** The system prompt
+  read "Accident Black Spot Detection uses your location to warn you when you
+  approach a known accident-prone or crime-prone area", which is the string that
+  has to justify the permission to a reviewer as well as a user.
+- **Only foreground access is requested.** The dialog offered "Allow Once" /
+  "Allow While Using App" / "Don't Allow" — no background prompt, matching the
+  Phase 8 design where background monitoring is a separate opt-in.
+- **The dark theme's Phase 11 accents read well on device.** Risk markers use
+  light fills with dark text, which is the pattern gotcha 24 settled on after the
+  contrast failure, and it survives being overlaid on Apple Maps tiles.
+- **Text entry is faithful.** Unlike `adb shell input text`, the simulator accepts
+  spaces and full strings without truncation, so form fixtures do not need
+  escaping.
