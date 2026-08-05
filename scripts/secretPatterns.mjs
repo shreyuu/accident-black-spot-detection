@@ -130,6 +130,8 @@ const SKIPPED_PATHS = [
 export const ALLOWED_FINDINGS = Object.freeze({
   'apps/mobile/src/features/auth/__tests__/schemas.test.ts::assigned-credential':
     'Fixture passwords for the registration schema tests. They exist to be rejected or accepted by a Zod schema and authenticate nothing. Only this rule is exempted here — a real key in this file would still be caught by the provider-prefix rules.',
+  'apps/admin/src/lib/__tests__/serviceAccount.test.ts::assigned-credential':
+    'A fake service account for the credential-parsing tests. The field must be called private_key because that is the key the schema reads, so this rule cannot be satisfied by renaming anything. The literal is deliberately NOT a PEM block — see the comment on it — so the private-key-block rule still applies to this file and would catch a real key pasted in beside it.',
 });
 
 /** @typedef {{ path: string, line: number, ruleId: string, description: string, excerpt: string }} Finding */

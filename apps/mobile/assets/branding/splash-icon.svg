@@ -1,0 +1,26 @@
+<!--
+  Splash mark.
+
+  Transparent background on purpose: expo-splash-screen paints the field colour
+  itself, and it paints a *different* one per theme (#0B1F3A light, #060F1D
+  dark). A baked-in background would show as a visible rectangle on one of them.
+
+  The ripples are lighter here than in the app icon. On a full-screen field at
+  imageWidth: 180 they sit at roughly 40 px radius, where the icon's opacities
+  read as dirt on the screen rather than as a graphic.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <g fill="none" stroke="#7FB0F7" stroke-linecap="round">
+    <circle cx="256" cy="216" r="168" stroke-width="10" opacity="0.42" />
+    <circle cx="256" cy="216" r="228" stroke-width="8" opacity="0.24" />
+  </g>
+
+  <path
+    fill="#F0B449"
+    fill-rule="evenodd"
+    d="M256 412 C212 340 164 282 164 216 A92 92 0 1 1 348 216 C348 282 300 340 256 412 Z
+       M256 144 L322 258 L190 258 Z
+       M247.5 194.5 A8.5 8.5 0 0 1 264.5 194.5 L264.5 209.5 A8.5 8.5 0 0 1 247.5 209.5 Z
+       M266 240 A10 10 0 1 1 246 240 A10 10 0 1 1 266 240 Z"
+  />
+</svg>

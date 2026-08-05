@@ -1,0 +1,27 @@
+<!--
+  Android 13+ themed ("monochrome") icon.
+
+  Android reads the ALPHA CHANNEL ONLY and tints the result with the user's
+  wallpaper palette. Two consequences:
+
+    - The fill colour here is irrelevant to the device. White is used because it
+      makes the file inspectable by eye and makes an accidentally-opaque export
+      obvious rather than subtle.
+    - The warning triangle has to be a hole. Filling it navy would look correct
+      in a viewer and render as a solid blob on a phone, because navy and amber
+      have identical alpha.
+
+  Same safe-circle transform as the foreground layer.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="432" height="432" viewBox="0 0 512 512">
+  <g transform="translate(256 256) scale(0.82) translate(-256 -268)">
+    <path
+      fill="#FFFFFF"
+      fill-rule="evenodd"
+      d="M256 412 C212 340 164 282 164 216 A92 92 0 1 1 348 216 C348 282 300 340 256 412 Z
+         M256 144 L322 258 L190 258 Z
+         M247.5 194.5 A8.5 8.5 0 0 1 264.5 194.5 L264.5 209.5 A8.5 8.5 0 0 1 247.5 209.5 Z
+         M266 240 A10 10 0 1 1 246 240 A10 10 0 1 1 266 240 Z"
+    />
+  </g>
+</svg>

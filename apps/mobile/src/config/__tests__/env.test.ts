@@ -105,4 +105,34 @@ describe('env schema', () => {
       expect(() => __envSchemaForTests.parse({ useFirebaseEmulator: 'yes' })).toThrow();
     });
   });
+
+  describe('overpassEndpoint', () => {
+    it('defaults to the public reference instance', () => {
+      // The happy path first: this is the value every developer and every test
+      // actually runs against, and a broken default would take the entire
+      // "nearby help" screen with it.
+      expect(__envSchemaForTests.parse({}).overpassEndpoint).toBe(
+        'https://overpass-api.de/api/interpreter',
+      );
+    });
+
+    it('accepts a self-hosted https instance', () => {
+      const endpoint = 'https://overpass.example.org/api/interpreter';
+      expect(__envSchemaForTests.parse({ overpassEndpoint: endpoint }).overpassEndpoint).toBe(
+        endpoint,
+      );
+    });
+
+    it('rejects http, which would put the user position on the wire in clear text', () => {
+      expect(() =>
+        __envSchemaForTests.parse({ overpassEndpoint: 'http://overpass.example.org/api' }),
+      ).toThrow(/https/);
+    });
+
+    it('rejects a value that is not a URL at all', () => {
+      expect(() =>
+        __envSchemaForTests.parse({ overpassEndpoint: 'overpass.example.org' }),
+      ).toThrow();
+    });
+  });
 });

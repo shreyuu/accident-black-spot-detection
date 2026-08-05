@@ -10,6 +10,7 @@ import { getAuth, type Auth } from 'firebase-admin/auth';
 import { getFirestore, type Firestore } from 'firebase-admin/firestore';
 
 import { serverEnv } from '@/lib/env';
+import { parseServiceAccount } from '@/lib/serviceAccount';
 
 /**
  * The Firebase Admin SDK — the only privileged credential in this repository.
@@ -61,29 +62,33 @@ function initialise(): App {
   /**
    * Real project. The service account arrives as a JSON blob in the environment
    * rather than a file path, because the deployment targets for this dashboard
-   * (Phase 14) provide secrets as environment variables and a file would have to
-   * be written to disk to be read back.
+   * provide secrets as environment variables and a file would have to be written
+   * to disk to be read back.
    *
-   * TODO(phase-14): this path is written but has never been exercised — the
-   * project has only ever run against emulators. Verify it before any deploy.
+   * ## How far this is verified
+   *
+   * Everything up to `cert()` is a pure function with its own tests — see
+   * `serviceAccount.ts` and its test file, which cover a missing variable,
+   * malformed JSON, each missing field, and a credential belonging to a
+   * different project than the one configured.
+   *
+   * `cert()` itself and the credential exchange with Google are **still
+   * unexercised**: this project has only ever run against emulators and has no
+   * real Firebase project to authenticate to. Do not read the tests as evidence
+   * that a deployment works — they are evidence that a misconfiguration is
+   * rejected with a message naming the cause, which is a smaller claim.
    */
-  const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
-  if (raw === undefined || raw.trim().length === 0) {
-    throw new Error(
-      'FIREBASE_SERVICE_ACCOUNT_JSON is required when the emulator hosts are not set. ' +
-        'Refusing to start: a dashboard with no credential would otherwise fail on the ' +
-        'first privileged write, half way through a moderation decision.',
-    );
-  }
-
-  // Typed as ServiceAccount rather than left as `any`: `cert` throws on a
-  // malformed key, so the assertion is checked immediately at runtime by the SDK
-  // rather than trusted.
-  const serviceAccount = JSON.parse(raw) as ServiceAccount;
+  const serviceAccount = parseServiceAccount(
+    process.env.FIREBASE_SERVICE_ACCOUNT_JSON,
+    serverEnv.firebaseProjectId,
+  );
 
   return initializeApp({
     projectId: serverEnv.firebaseProjectId,
-    credential: cert(serviceAccount),
+    // Structurally typed rather than asserted from `any`: the fields below are
+    // exactly `ServiceAccount`'s, and every one has been checked to be a
+    // non-empty string before reaching here.
+    credential: cert(serviceAccount satisfies ServiceAccount),
   });
 }
 

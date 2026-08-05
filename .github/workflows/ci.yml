@@ -1,0 +1,203 @@
+name: CI
+
+# Every push and every pull request. There is no "only on main" shortcut here:
+# the project's working branch is not main, and a gate that does not run on the
+# branch where the work happens is a gate that reports success after the fact.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+# A second push to the same branch makes the first run's answer irrelevant.
+# Runs on the default branch are exempt, because a cancelled run there leaves no
+# recorded result for a commit that is already merged.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != format('refs/heads/{0}', github.event.repository.default_branch) }}
+
+permissions:
+  contents: read
+
+env:
+  # The version every gate in this repository has actually been run on, matching
+  # `base.node` in apps/mobile/eas.json. package.json declares
+  # `engines.node >= 20.19.4`, which is a wider claim than anything has been
+  # exercised against — see docs/builds-and-releases.md, "Node versions".
+  NODE_VERSION: '24.15.0'
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # The emulator-free gate. Mirrors `npm run verify` exactly.
+  #
+  # The steps are separate rather than one `npm run verify` call so that a
+  # failure names itself in the job summary instead of hiding inside a
+  # six-command chain. `scripts/checkWorkflowParity.mjs` — run by `test:scripts`,
+  # which is itself part of `verify` — fails if the two ever drift apart.
+  # ---------------------------------------------------------------------------
+  verify:
+    name: Verify (lint, types, unit tests, secrets)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      # `npm ci` rather than `npm install`: it installs exactly the lockfile and
+      # fails if package.json and package-lock.json disagree, which is the one
+      # class of problem a developer's warm node_modules will never surface.
+      - name: Install
+        run: npm ci
+
+      - name: Format
+        run: npm run format:check
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # 1,016 tests across mobile, shared-types, functions and admin.
+      - name: Unit tests
+        run: npm run test
+
+      - name: Script tests
+        run: npm run test:scripts
+
+      # Scans tracked files *and* untracked-but-not-ignored ones, so a secret
+      # about to be committed fails here rather than one commit later.
+      - name: Secret scan
+        run: npm run scan:secrets
+
+  # ---------------------------------------------------------------------------
+  # The moderation dashboard's production build.
+  #
+  # Not covered by `verify`: `tsc --noEmit` and ESLint both pass on code that
+  # Next cannot build. Phase 12 moved privileged work into server components and
+  # server actions, where the failure mode is a module that pulls firebase-admin
+  # into a client bundle — a build error, and nothing else's error.
+  # ---------------------------------------------------------------------------
+  admin-build:
+    name: Admin dashboard build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # The build evaluates server modules during page-data collection, and
+      # src/lib/env.ts refuses to start without a configuration — so the build
+      # fails outright with no env file. These are the committed emulator
+      # defaults, the same ones the README tells a developer to copy, and they
+      # contain no credential: a `demo-` project id cannot reach Google Cloud.
+      - name: Configure (emulator defaults)
+        run: cp apps/admin/.env.local.example apps/admin/.env.local
+
+      - name: Build
+        run: npm run build --workspace @accident-black-spot-detection/admin
+
+  # ---------------------------------------------------------------------------
+  # The Python analytics service: ruff, ruff format, mypy, pytest.
+  #
+  # Its own job because it shares nothing with the Node gate — no lockfile, no
+  # node_modules, no toolchain — and because a Python failure should not be
+  # buried in a job named after JavaScript.
+  # ---------------------------------------------------------------------------
+  analytics:
+    name: Analytics service (Python)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: services/analytics/uv.lock
+
+      # `--locked` fails rather than silently resolving new versions if
+      # uv.lock is out of date with pyproject.toml. The whole point of
+      # committing a lockfile is that CI tests what the lockfile says.
+      - name: Install
+        working-directory: services/analytics
+        run: uv sync --locked
+
+      # ruff check + ruff format --check + mypy, then 293 tests. No emulator and
+      # no network: the ECLAT cross-validation against mlxtend runs on seeded
+      # synthetic data.
+      - name: Verify
+        run: npm run analytics:verify
+
+  # ---------------------------------------------------------------------------
+  # The emulator-backed suites: 151 security-rules tests and 8 end-to-end
+  # function tests.
+  #
+  # ## Why these are in CI at all
+  #
+  # They are the most expensive job here — a firebase-tools install, a JVM, and
+  # four emulators — and they were the obvious thing to leave out. They are in
+  # because of what Phase 13 found: `hasNoPrivilegedFields` called `.keys()` on a
+  # Set, every profile update had been denied since Phase 2, and no test noticed
+  # for eleven phases. The rules are the only enforcement point for "nobody
+  # approves their own report" and "an algorithm cannot publish a warning", and
+  # nothing else in this pipeline executes them. A gate that skips the rules is
+  # a gate that would have shipped that bug again.
+  #
+  # ## Why one job and not two
+  #
+  # Both suites need the same emulator stack and the same install. Splitting them
+  # would pay for firebase-tools twice to save nothing: they run in about a
+  # minute combined, and the emulator start-up dominates either way.
+  # ---------------------------------------------------------------------------
+  emulator-suites:
+    name: Firestore rules and function integration tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      # The Firestore and Storage emulators are Java. Pinned rather than relying
+      # on whatever the runner image ships, because an image bump silently
+      # changing the JVM under a security gate is not a thing to discover during
+      # an incident.
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install
+        run: npm ci
+
+      # Pinned to the version the suites were last run against locally. The
+      # emulator's rules engine is part of what is under test here, so "latest"
+      # would mean the meaning of a passing run changes without a commit.
+      - name: Install Firebase CLI
+        run: npm install --global firebase-tools@15.2.1
+
+      # `emulators:exec` starts the emulators, runs the command, and tears them
+      # down with the command's exit code — so a crashed emulator fails the job
+      # rather than hanging it.
+      - name: Firestore and Storage rules tests
+        run: npm run test:rules:ci
+
+      # Builds the functions first: the emulator serves compiled JS from
+      # functions/lib, and a stale build would test the previous commit.
+      - name: Cloud Functions integration tests
+        run: npm run test:functions:ci

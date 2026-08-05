@@ -25,6 +25,17 @@ const firebaseValue = z
   .optional()
   .transform((value) => (value === '' ? undefined : value));
 
+/**
+ * An unset variable and one set to the empty string mean the same thing here.
+ * Metro substitutes a missing `EXPO_PUBLIC_*` as `undefined`, but a `.env` line
+ * with nothing after the `=` arrives as `''` — which would defeat a `.default()`
+ * and fail validation instead.
+ */
+function blankToUndefined(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed === undefined || trimmed.length === 0 ? undefined : trimmed;
+}
+
 /** Accepts "true"/"false" from the environment, where everything is a string. */
 const booleanFlag = z
   .enum(['true', 'false'])
@@ -77,6 +88,28 @@ const envSchema = z
      * anywhere. See `googlePlacesProvider` and `functions/.env.example`.
      */
     googlePlacesProxyEnabled: booleanFlag,
+
+    /**
+     * Overpass API endpoint for the keyless OpenStreetMap nearby-places provider.
+     *
+     * Defaults to `overpass-api.de`, the reference public instance: free, no
+     * credential, and the reason Phase 9's "no secrets committed" gate was met
+     * by removing the problem rather than managing it.
+     *
+     * It is configurable because a public instance is not something to build a
+     * road-safety feature's availability on. It rate-limits and refuses under
+     * load — which the provider chain treats as recoverable — but any deployment
+     * beyond demonstration should point this at an instance the project runs or
+     * pays for. That is a deployment decision, and this is where it is made.
+     *
+     * Validated as an absolute `https:` URL. Plain `http:` is rejected outright:
+     * the query carries the user's coordinates, rounded but still a position,
+     * and sending that in clear text over a network the user does not control is
+     * not a trade-off worth offering a configuration switch for.
+     */
+    overpassEndpoint: z
+      .url({ protocol: /^https$/, error: 'EXPO_PUBLIC_OVERPASS_ENDPOINT must be an https:// URL.' })
+      .default('https://overpass-api.de/api/interpreter'),
   })
   /**
    * Firebase config is all-or-nothing. A partially filled block is the worst
@@ -131,6 +164,9 @@ function parseEnv(): Env {
     googleMapsApiKeyAndroid: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY_ANDROID,
     googleMapsApiKeyIos: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY_IOS,
     googlePlacesProxyEnabled: process.env.EXPO_PUBLIC_GOOGLE_PLACES_PROXY_ENABLED,
+    // Blank-to-undefined so an empty line in .env falls back to the default
+    // rather than failing URL validation on the empty string.
+    overpassEndpoint: blankToUndefined(process.env.EXPO_PUBLIC_OVERPASS_ENDPOINT),
   });
 
   if (!result.success) {

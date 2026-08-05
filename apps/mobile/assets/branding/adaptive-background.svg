@@ -1,0 +1,29 @@
+<!--
+  Android adaptive icon — background layer.
+
+  Full-bleed and safe to crop anywhere: the field is a gradient, and the ripples
+  carry the same transform as the foreground layer so the two stay concentric
+  after the foreground is scaled into its safe circle. Change one transform and
+  you must change the other.
+
+  Nothing here depends on the corners surviving. A circular mask removes roughly
+  21% of this image and the result still reads as the same icon.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <radialGradient id="field" cx="50%" cy="42%" r="72%">
+      <stop offset="0%" stop-color="#16375F" />
+      <stop offset="62%" stop-color="#0B1F3A" />
+      <stop offset="100%" stop-color="#060F1D" />
+    </radialGradient>
+  </defs>
+
+  <rect width="512" height="512" fill="url(#field)" />
+
+  <g transform="translate(256 256) scale(0.82) translate(-256 -268)">
+    <g fill="none" stroke="#7FB0F7" stroke-linecap="round">
+      <circle cx="256" cy="216" r="168" stroke-width="10" opacity="0.30" />
+      <circle cx="256" cy="216" r="228" stroke-width="8" opacity="0.16" />
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,23 @@
+<!--
+  Android adaptive icon — foreground layer.
+
+  The transform is the whole point of this file. Android composites a 108dp
+  canvas but only guarantees the central 66dp circle survives every OEM mask, so
+  the mark is recentred on its own bounding box (which is taller than it is wide,
+  because of the pin's tip) and scaled to 0.82 to sit inside a radius of ~140 in
+  a 512 space. The safe radius is ~156; the remainder is deliberate slack, since
+  some launchers also animate the foreground layer independently of the
+  background and briefly show it larger.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <g transform="translate(256 256) scale(0.82) translate(-256 -268)">
+    <path
+      fill="#F0B449"
+      fill-rule="evenodd"
+      d="M256 412 C212 340 164 282 164 216 A92 92 0 1 1 348 216 C348 282 300 340 256 412 Z
+         M256 144 L322 258 L190 258 Z
+         M247.5 194.5 A8.5 8.5 0 0 1 264.5 194.5 L264.5 209.5 A8.5 8.5 0 0 1 247.5 209.5 Z
+         M266 240 A10 10 0 1 1 246 240 A10 10 0 1 1 266 240 Z"
+    />
+  </g>
+</svg>
