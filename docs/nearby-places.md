@@ -56,11 +56,22 @@ varies enormously by region — excellent across much of Europe, patchy elsewher
 Data is © OpenStreetMap contributors under the **ODbL**, and attribution is a
 licence condition; the screen renders it.
 
-The endpoint is the public `overpass-api.de` instance, which is free, heavily
-used, and will refuse or throttle under load. That is not a defect to work
-around — it is exactly the case the fallback chain and the offline cache exist
-for. `TODO(phase-14)` notes that anything beyond demonstration should point at an
-instance the project runs or pays for.
+The endpoint **defaults** to the public `overpass-api.de` instance, which is
+free, heavily used, and will refuse or throttle under load. That is not a defect
+to work around — it is exactly the case the fallback chain and the offline cache
+exist for.
+
+Phase 14 made it configurable: set `EXPO_PUBLIC_OVERPASS_ENDPOINT` to point at an
+instance the project runs or pays for. Anything beyond demonstration should.
+`overpass-api.de` is volunteer-run and has no obligation to this app, and its
+throttling is experienced by a user as "nearby help is unavailable" on a screen
+they may have opened in an emergency.
+
+The value is validated at startup as an absolute `https:` URL, and plain `http:`
+is refused rather than warned about. The query carries the user's position —
+rounded to about a metre, but still a position — and putting that in clear text
+over a network the user does not control is not a trade-off worth offering a
+switch for.
 
 ### Google Places (New) — optional, and proxied since Phase 12
 

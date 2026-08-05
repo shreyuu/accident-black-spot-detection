@@ -1,0 +1,24 @@
+<!--
+  Web favicon.
+
+  Rendered at 48 px, where the ripples in the app icon collapse into a grey haze,
+  so they are omitted and the mark is enlarged to fill the field instead. This is
+  the size test for the whole design: if the triangular hole is not visible here,
+  the mark is too detailed.
+
+  Web is not a supported target for this app — `web.output: "static"` exists
+  because Expo Router requires the key, and the mobile screens are not built or
+  tested against react-native-web. This file is here so the dev-server tab is not
+  branded with the Expo logo, and for no stronger reason than that.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#0B1F3A" />
+  <g transform="translate(256 256) scale(1.06) translate(-256 -268)">
+    <path
+      fill="#F0B449"
+      fill-rule="evenodd"
+      d="M256 412 C212 340 164 282 164 216 A92 92 0 1 1 348 216 C348 282 300 340 256 412 Z
+         M256 150 L318 254 L194 254 Z"
+    />
+  </g>
+</svg>

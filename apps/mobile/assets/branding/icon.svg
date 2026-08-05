@@ -1,0 +1,43 @@
+<!--
+  Master app icon. Full-bleed, square, no rounded corners: iOS and Android both
+  apply their own mask, and baking one in produces a corner-inside-a-corner.
+
+  All geometry is authored in a 512 unit space and rendered at 1024 so the same
+  path data can be shared with the adaptive-icon layers without rescaling by hand.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 512 512">
+  <defs>
+    <radialGradient id="field" cx="50%" cy="42%" r="72%">
+      <stop offset="0%" stop-color="#16375F" />
+      <stop offset="62%" stop-color="#0B1F3A" />
+      <stop offset="100%" stop-color="#060F1D" />
+    </radialGradient>
+  </defs>
+
+  <rect width="512" height="512" fill="url(#field)" />
+
+  <!--
+    Proximity ripples, centred on the pin head rather than the canvas so they
+    radiate from the marked place. Radii are chosen to clear the warning triangle
+    entirely — a ripple crossing the cut-out reads as noise at icon sizes.
+  -->
+  <g fill="none" stroke="#7FB0F7" stroke-linecap="round">
+    <circle cx="256" cy="216" r="168" stroke-width="10" opacity="0.30" />
+    <circle cx="256" cy="216" r="228" stroke-width="8" opacity="0.16" />
+  </g>
+
+  <!--
+    Pin, warning triangle and exclamation as a single evenodd path. The triangle
+    is a genuine hole, not a navy-filled shape drawn on top: that is what lets the
+    identical path serve as the Android monochrome and notification silhouette,
+    where alpha is the only channel the OS reads.
+  -->
+  <path
+    fill="#F0B449"
+    fill-rule="evenodd"
+    d="M256 412 C212 340 164 282 164 216 A92 92 0 1 1 348 216 C348 282 300 340 256 412 Z
+       M256 144 L322 258 L190 258 Z
+       M247.5 194.5 A8.5 8.5 0 0 1 264.5 194.5 L264.5 209.5 A8.5 8.5 0 0 1 247.5 209.5 Z
+       M266 240 A10 10 0 1 1 246 240 A10 10 0 1 1 266 240 Z"
+  />
+</svg>

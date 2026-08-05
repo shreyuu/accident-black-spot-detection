@@ -14,7 +14,7 @@ alerts, supports incident reporting, and provides emergency SOS assistance.
 
 ## Build status
 
-This project is being built in phases. **Phase 13 of 15 is complete.**
+This project is being built in phases. **Phase 14 of 15 is complete.**
 
 | Phase | Scope                                    | Status                    |
 | ----- | ---------------------------------------- | ------------------------- |
@@ -32,7 +32,7 @@ This project is being built in phases. **Phase 13 of 15 is complete.**
 | 11    | Settings, offline support, accessibility | ✅ Complete               |
 | 12    | Security, privacy, abuse prevention      | ✅ Complete               |
 | 13    | Testing and QA                           | ✅ Complete               |
-| 14    | CI/CD, builds, release preparation       | ⬜ Not started            |
+| 14    | CI/CD, builds, release preparation       | ✅ Complete (see caveat§) |
 | 15    | Documentation and demonstration          | ⬜ Not started            |
 
 **What works today:** the full account flow (register, sign in, sign out, password reset) against
@@ -122,6 +122,45 @@ or `active` field — so it could not satisfy the app's query even if copied acr
 an administrator's deliberate, audited act. See
 [`docs/eclat-methodology.md`](docs/eclat-methodology.md).
 
+**The project now builds a release binary, and has a CI pipeline.** A GitHub Actions workflow runs
+on every push and pull request: format, lint, typecheck, 1,027 unit tests, the secret scan, a
+production build of the admin dashboard, the Python gate, and — deliberately, despite being the
+expensive one — the 151 Firestore/Storage rules tests and the 8 end-to-end function tests under
+`firebase emulators:exec`. The rules are the only enforcement point for "nobody approves their own
+report", nothing else in the pipeline executes them, and Phase 13 found a rules bug that had
+survived eleven phases. A script asserts CI never runs less than `npm run verify` does.
+
+**The placeholder artwork is gone.** Icon, adaptive-icon layers, splash and a notification
+silhouette are generated from committed SVG sources by `npm run icons`, which asserts the two
+properties that otherwise fail silently and late: no alpha channel on the App Store icon, and a
+genuinely white-on-transparent silhouette for the icons Android tints by alpha alone. See
+[`apps/mobile/assets/branding/README.md`](apps/mobile/assets/branding/README.md).
+
+**Two capabilities the app never used are no longer declared.** iOS `UIBackgroundModes: fetch`,
+appended unconditionally by `expo-task-manager`, and Android `SYSTEM_ALERT_WINDOW`, written into the
+main manifest by Expo's prebuild template. Both are removed by a local config plugin and verified in
+the generated native files. Both were App Store and Play review risks, and both were claims about
+the app that were not true.
+
+See [`docs/builds-and-releases.md`](docs/builds-and-releases.md) for the build, versioning and CI
+detail — including a table of exactly which release claims are verified and which are not — and
+[`docs/store-preparation.md`](docs/store-preparation.md) for what submission would still require.
+
+> **§ No EAS build has ever been produced, and nothing has been submitted anywhere.** The phase gate
+> asked for a preview build, and the preview _configuration_ was verified by building it: a clean
+> `expo prebuild` at `EXPO_PUBLIC_APP_ENV=preview` followed by `gradlew assembleRelease`, producing a
+> 101 MB APK with the right application id, versionCode, permissions and a packed JS bundle. That is
+> a real release-configuration binary, but EAS did not make it — EAS needs an Expo account this
+> repository does not have, and `eas init` has never been run, so there is no `extra.eas.projectId`.
+>
+> Similarly, **the CI workflow has never run on GitHub.** Every command in every job was executed
+> locally and passed, and the YAML parses, but a green pipeline has not been observed.
+>
+> One local-build trap worth knowing: `gradlew assembleRelease` fails in `:app:mergeDexRelease` with
+> `DexArchiveMergerException` and an empty message unless the Gradle heap is raised. The real cause,
+> forty lines further down, is `OutOfMemoryError` inside R8 — Expo's template sets `-Xmx2048m`, which
+> is not enough. Pass `-Dorg.gradle.jvmargs="-Xmx6g -XX:MaxMetaspaceSize=1g"`.
+
 > **‡ Both development builds now compile and run.** The Android debug APK builds clean and carries
 > `ACCESS_BACKGROUND_LOCATION`, `FOREGROUND_SERVICE` and `FOREGROUND_SERVICE_LOCATION`, with
 > `expo.modules.location.services.LocationTaskService` declared as `foregroundServiceType="location"`
@@ -186,8 +225,11 @@ accident-black-spot-detection/
 │       │   ├── types/        # Shared domain types
 │       │   └── utils/        # Geo maths, logger, error normalisation
 │       ├── types/            # Local ambient declarations
-│       ├── assets/           # Placeholder icons (real branding: Phase 14)
-│       ├── eas.json          # EAS build profiles (Phase 8)
+│       ├── plugins/          # Local Expo config plugins (Phase 14)
+│       ├── assets/
+│       │   ├── branding/     # SVG sources for every icon (Phase 14)
+│       │   └── images/       # Generated PNGs — `npm run icons`
+│       ├── eas.json          # EAS build profiles (Phases 8, 14)
 │       └── ios/, android/    # Generated by `expo prebuild` — gitignored
 ├── packages/
 │   └── shared-types/         # Vocabulary + moderation rules shared by both apps
@@ -200,7 +242,9 @@ accident-black-spot-detection/
 │       ├── app/              # api, models, algorithms, services, repositories
 │       └── tests/            # beside app/, not inside it
 ├── firebase/                 # Security rules, emulator config, rules + integration tests
-├── scripts/                  # Repository tooling: the secret scanner (Phase 12)
+├── scripts/                  # Repository tooling: secret scanner (Phase 12),
+│                             #   icon generator and CI parity check (Phase 14)
+├── .github/workflows/        # CI pipeline (Phase 14)
 └── docs/                     # Audit, ADRs, and design documentation
 ```
 
@@ -335,13 +379,41 @@ npm start
 > `Encoding::CompatibilityError: Unicode Normalization not appropriate for ASCII-8BIT` in a shell
 > that has no locale set, which is easy to hit in a non-interactive shell or CI.
 
-For EAS builds, `apps/mobile/eas.json` defines `development`, `development-device`, `preview` and
-`production` profiles. EAS does not read your local `.env`, so every `EXPO_PUBLIC_*` value the app
-needs must be set as an EAS environment variable or secret:
+For EAS builds, `apps/mobile/eas.json` defines a shared `base` profile plus `development`,
+`development-device`, `preview` and `production`. EAS builds from a git archive, so it never sees
+your local `.env` — every `EXPO_PUBLIC_*` value the app needs must be set as an EAS environment
+variable. A build made from these profiles as they stand starts with Firebase unconfigured, and says
+so rather than failing obscurely.
 
 ```bash
 npx eas-cli build --profile development --platform android
 ```
+
+**No EAS build has been produced for this project**; `eas init` has never been run. To build a
+release-configuration Android binary locally instead:
+
+```bash
+cd apps/mobile && EXPO_PUBLIC_APP_ENV=preview npx expo prebuild --platform android --clean --no-install
+```
+
+```bash
+cd apps/mobile/android && ./gradlew assembleRelease -Dorg.gradle.jvmargs="-Xmx6g -XX:MaxMetaspaceSize=1g"
+```
+
+The heap flag is required — see the caveat in Build status. Afterwards, re-run `expo prebuild`
+without `EXPO_PUBLIC_APP_ENV` to restore the development variant.
+
+Regenerate the app artwork after editing anything in `apps/mobile/assets/branding/`:
+
+```bash
+npm run icons
+```
+
+Needs `librsvg` and `imagemagick`, neither of which is a project dependency — the generated PNGs are
+committed, and no build or CI job runs this.
+
+Full detail, including versioning and the CI pipeline, is in
+[`docs/builds-and-releases.md`](docs/builds-and-releases.md).
 
 ---
 
@@ -360,8 +432,19 @@ npm run test:rules
 ```
 
 The Firestore and Cloud Storage security rules, evaluated by the real rules engine against the
-emulator — 145 tests covering ownership, roles, rate limiting, duplicate detection, reporter
+emulator — 151 tests covering ownership, roles, rate limiting, duplicate detection, reporter
 privacy and the upload rules.
+
+Both emulator gates have a `:ci` variant that starts and stops the emulators themselves, which is
+what the CI workflow runs and what to use if you would rather not keep a second terminal open:
+
+```bash
+npm run test:rules:ci
+```
+
+```bash
+npm run test:functions:ci
+```
 
 ```bash
 npm run test:functions
@@ -376,6 +459,12 @@ Everything at once, emulators running:
 ```bash
 npm run verify:all
 ```
+
+The same gates run in CI on every push and pull request — see
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml). `npm run verify` also checks that the
+workflow has not drifted below it: `scripts/checkWorkflowParity.mjs` fails if a step exists locally
+but not in CI, so a gate added here cannot silently be weaker there. **The workflow has never been
+run on GitHub** — each job's commands were executed locally.
 
 Coverage:
 
@@ -434,13 +523,31 @@ npm run format
 
 ## Known limitations
 
-- **Feature work is incomplete by design.** Only Phases 0–13 are done; see the table above.
+- **Feature work is incomplete by design.** Only Phases 0–14 are done; see the table above.
+- **No EAS build exists, and the CI workflow has never run on GitHub.** The preview _configuration_
+  was verified by building it locally into a real release APK, and every CI job's commands were run
+  locally and passed — but EAS needs an Expo account this repository does not have, and the workflow
+  has not been pushed. See the table in [`docs/builds-and-releases.md`](docs/builds-and-releases.md),
+  which states claim by claim what is verified and what is not.
+- **No crash reporter is registered.** Phase 14 added the seam — `setCrashReporter` in
+  `src/utils/logger.ts`, with tests — but ships no vendor. Choosing one adds a data-processing
+  relationship that the privacy policy and both stores' data-safety forms have to describe, which is
+  a decision for whoever ships this rather than for a build phase. Until then the first users are the
+  error-reporting system.
+- **`engines.node >= 20.19.4` has never been exercised.** CI and `eas.json` both pin 24.15.0, the
+  version everything here has actually been run on. The declared floor is either worth testing in a
+  matrix or worth raising to match reality.
 - **The first administrator is still granted by a script.** `npm run grant-role` uses the Admin SDK.
   Phase 12 added a `/roles` screen for every _subsequent_ role change, audited and with immediate
   revocation, but the bootstrap has to come from outside the system — a dashboard that could create
   its own first admin would be one anyone could create an admin in.
-- **The real-project Admin SDK path has never been exercised.** Everything has only ever run against
-  emulators; `FIREBASE_SERVICE_ACCOUNT_JSON` is written but untested (Phase 14).
+- **The real-project Admin SDK path has never authenticated to Google.** Everything has only ever run
+  against emulators. Phase 14 extracted the credential handling into a tested pure function
+  (`apps/admin/src/lib/serviceAccount.ts`) covering a missing variable, malformed JSON, each missing
+  field, and — the one that matters — a service account belonging to a _different_ project than the
+  dashboard was configured for, which the Admin SDK would otherwise follow silently with rules
+  bypassed. What remains untested is `cert()` and the credential exchange itself, which needs a real
+  project.
 - **SMS delivery can never be confirmed.** `expo-sms` opens the phone's composer and returns no
   usable status on Android at all; on iOS "sent" means the user pressed send, not that anything
   arrived. Every outcome message in the app is phrased about the composer, never about delivery.
@@ -492,12 +599,16 @@ npm run format
   disclosure and in Settings.
 - **The background flow has not been exercised on a running device or emulator.** Its logic is
   covered by tests and the native configuration is verified from the built Android APK, but no
-  background notification has yet been observed actually firing — the Android APK was compiled, not
-  installed and driven, and the iOS build is blocked (see the caveat in Build status). Doing that
-  walkthrough is part of Phase 13.
-- **`UIBackgroundModes` also declares `fetch`.** `expo-task-manager`'s config plugin adds it
-  unconditionally; this app has no background fetch task. Inert, but App Store review does query
-  unused background modes, so it is flagged for Phase 14.
+  background notification has yet been observed actually firing. It is one of the eight manual
+  scenarios still unexecuted — see [`docs/manual-test-plan.md`](docs/manual-test-plan.md) — and it
+  needs a physical device rather than an emulator to mean anything.
+- **Two unused capabilities were removed in Phase 14** — iOS `UIBackgroundModes: fetch`, appended
+  unconditionally by `expo-task-manager`, and Android `SYSTEM_ALERT_WINDOW`, written into the main
+  manifest by Expo's prebuild template. Both are stripped by
+  `apps/mobile/plugins/withoutUnusedCapabilities.ts` and verified in the generated native files. The
+  plugin **must be listed first** in `plugins`, because Expo runs mods in reverse registration
+  order — the comment in `app.config.ts` explains why, and it looks like a mistake if you do not
+  read it.
 - **Dismissing the Android notification stops background warnings.** `killServiceOnDestroy` is on
   deliberately: a user must be able to stop location tracking without opening the app.
 - **Background monitoring resumes on launch, not on reboot.** Phase 11 moved the reconciliation to
@@ -511,9 +622,10 @@ npm run format
   pretend otherwise. The screen says the list is a starting point, not a directory.
 - **Opening hours are almost always unknown**, and are shown as unknown rather than guessed. Only a
   literal `24/7` tag is reported as always open, and nothing is ever reported as closed.
-- **Nearby lookups go to a free public Overpass endpoint**, which throttles under load. That is why
-  the provider chain and the offline cache exist. A self-hosted or paid instance is Phase 14 work,
-  marked `TODO(phase-14)`.
+- **Nearby lookups default to a free public Overpass endpoint**, which throttles under load. That is
+  why the provider chain and the offline cache exist. Phase 14 made it configurable —
+  `EXPO_PUBLIC_OVERPASS_ENDPOINT`, validated as an absolute `https:` URL — but the default is still
+  the public instance, and a deployment beyond demonstration should not stay on it.
 - **The Google Places key is no longer in the app.** Phase 12 moved the call behind the
   `nearbyPlacesProxy` Cloud Function, which holds the key in Secret Manager;
   `EXPO_PUBLIC_GOOGLE_PLACES_PROXY_ENABLED` is now a flag, not a credential. The default
@@ -562,13 +674,17 @@ npm run format
 - **No rate limiting on registration.** Report _submission_ is rate limited and deduplicated
   server-side (Phase 12), but account creation relies on Firebase's own throttling — so the daily
   report allowance is per account, not per person.
-- **Icons and splash artwork are placeholders** carried from the Expo template. Real branding is
-  produced in Phase 14.
+- **No screenshots, feature graphic or privacy-policy URL exist**, and no developer accounts have
+  been registered. Play's background-location declaration in particular needs a video of the in-app
+  disclosure, which needs a device build. See
+  [`docs/store-preparation.md`](docs/store-preparation.md).
 - **`npm audit` reports advisories in dev tooling** (`minimatch` via ESLint, `xcode` via
   `@expo/config-plugins`). These are transitive, build-time only, absent from the shipped bundle,
   and not fixable without breaking the Expo toolchain. Revisited in Phases 12 and 14.
-- **Physical-device testing has not been performed.** Verification so far is on the iOS 26.2
-  Simulator and a `Pixel_9` (Android 16) emulator. Device testing is documented in Phase 13.
+- **Physical-device testing has still not been performed.** Verification so far is on the iOS
+  Simulator and a `Pixel_9` (Android 16) emulator. Phase 14 produced an installable release APK but
+  did not install it on real hardware, and this remains the largest single gap between this
+  repository and a submittable app.
 
 ---
 

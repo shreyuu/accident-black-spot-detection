@@ -1,0 +1,35 @@
+<!--
+  Android status-bar / foreground-service icon.
+
+  Consumed by two plugins for two different notifications:
+    - expo-notifications  -> proximity alerts
+    - expo-location       -> the persistent foreground-service notification that
+                             background monitoring is legally required to show
+
+  Both resize this to a 24dp baseline (24-96 px). Android then discards every
+  channel except alpha and draws the silhouette in white. A coloured, opaque PNG
+  here becomes a white square in the status bar — the single most common way this
+  asset is got wrong.
+
+  ## Why this is the triangle alone and not the app's pin
+
+  It was drawn as the pin first, to match the icon. Rendered at 24dp the pin's
+  triangular cut-out closes up and the whole glyph reads as an undifferentiated
+  blob; the two were compared side by side at that size before choosing. The
+  warning triangle keeps its exclamation legible because the shape is convex,
+  the strokes are wide, and there is no tapering tip spending pixels on outline.
+
+  It is also the more honest glyph for what these notifications are. A proximity
+  alert is a warning, and the triangle is the glyph a user already reads as one
+  at a glance in a crowded status bar. Brand recognition is not what this asset
+  is for — the app name is on the notification directly underneath it.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 512 512">
+  <path
+    fill="#FFFFFF"
+    fill-rule="evenodd"
+    d="M256 92 L460 428 L52 428 Z
+       M239 215 A17 17 0 0 1 273 215 L273 294 A17 17 0 0 1 239 294 Z
+       M276 350 A20 20 0 1 1 236 350 A20 20 0 1 1 276 350 Z"
+  />
+</svg>

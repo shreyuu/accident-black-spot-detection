@@ -30,7 +30,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "scan:secrets": "node scripts/scanSecrets.mjs",
-    "test:scripts": "node --test \"scripts/**/*.test.mjs\"",
+    "test:scripts": "node --test \"scripts/**/*.test.mjs\" && node scripts/checkWorkflowParity.mjs",
     "verify": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run test:scripts && npm run scan:secrets",
     "grant-role": "node firebase/scripts/grantRole.mjs",
     "test:rules": "npm run test:rules --workspace @accident-black-spot-detection/firebase",
@@ -40,7 +40,10 @@
     "analytics:lint": "cd services/analytics && uv run ruff check . && uv run ruff format --check . && uv run mypy app",
     "analytics:verify": "npm run analytics:lint && npm run analytics:test",
     "verify:all": "npm run verify && npm run analytics:verify && npm run test:rules && npm run test:functions",
-    "test:functions": "npm run test:functions --workspace @accident-black-spot-detection/firebase"
+    "test:functions": "npm run test:functions --workspace @accident-black-spot-detection/firebase",
+    "test:rules:ci": "firebase emulators:exec --only firestore,storage \"npm run test:rules\"",
+    "test:functions:ci": "npm run functions:build && firebase emulators:exec --only auth,firestore,storage,functions \"npm run test:functions\"",
+    "icons": "node scripts/generateAppIcons.mjs"
   },
   "devDependencies": {
     "prettier": "^3.9.6"

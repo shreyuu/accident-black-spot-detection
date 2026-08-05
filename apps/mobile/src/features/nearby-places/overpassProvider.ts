@@ -1,3 +1,4 @@
+import { env } from '@/config/env';
 import { requestJson } from '@/features/nearby-places/httpJson';
 import type {
   NearbyPlace,
@@ -26,17 +27,20 @@ import { categoryTagFilters, mapOverpassResponse } from '@/features/nearby-place
  */
 
 /**
- * Public Overpass instance.
+ * The Overpass instance to query.
  *
- * `overpass-api.de` is the reference deployment. It is free, heavily used, and
- * will rate-limit or refuse under load — which is precisely why the service
+ * Configurable since Phase 14 via `EXPO_PUBLIC_OVERPASS_ENDPOINT`, defaulting to
+ * `overpass-api.de` — the reference public deployment. It is free, heavily used,
+ * and will rate-limit or refuse under load, which is precisely why the service
  * layer treats a provider failure as recoverable rather than fatal.
  *
- * TODO(phase-14): for anything beyond demonstration this should point at an
- * instance the project runs or pays for. A public endpoint is not something to
- * build a road-safety feature's availability on.
+ * **A deployment beyond demonstration should not point here.** A public
+ * endpoint is not something to build a road-safety feature's availability on,
+ * and the operators have no obligation to this app. Set the variable to an
+ * instance the project runs or pays for; `src/config/env.ts` rejects anything
+ * that is not an absolute `https:` URL.
  */
-export const OVERPASS_ENDPOINT = 'https://overpass-api.de/api/interpreter';
+export const OVERPASS_ENDPOINT = env.overpassEndpoint;
 
 /**
  * Overpass's usage policy asks for an identifying User-Agent so operators can
