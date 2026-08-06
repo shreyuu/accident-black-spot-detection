@@ -177,10 +177,16 @@ jobs:
       # on whatever the runner image ships, because an image bump silently
       # changing the JVM under a security gate is not a thing to discover during
       # an incident.
+      #
+      # 21 is a floor, not a preference: firebase-tools 15 refuses to start the
+      # emulators on anything earlier — "no longer supports Java version before
+      # 21". This was pinned to 17 on the first push and failed for exactly that
+      # reason, while every local run had been on the JDK 21 the README lists as
+      # a prerequisite. Keep this in step with that table.
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
 
       - name: Install
         run: npm ci

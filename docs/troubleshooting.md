@@ -164,6 +164,18 @@ If a rule denies something it plainly should allow, read the full message for
 **`Function not found`**. An erroring rule is a denial, so a typo in a helper
 function silently forbids the operation it was meant to permit.
 
+### The emulators refuse to start on a Java version error
+
+> `firebase-tools no longer supports Java version before 21. Please install a JDK at
+version 21 or above to get a compatible runtime.`
+
+`firebase-tools` 15 dropped Java 17. The emulators exit immediately, so it reads as
+"emulators broken" rather than "wrong JDK".
+
+`java -version` to check. The CI workflow pins Temurin 21 in the `emulator-suites` job
+for this reason — it was pinned to 17 on the first push and failed exactly here, which
+is the only thing the first CI run caught.
+
 ### Rules tests fail in confusing ways when run in parallel
 
 `node --test` runs files in parallel by default. The rules suite runs with
