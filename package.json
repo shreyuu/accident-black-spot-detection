@@ -24,6 +24,8 @@
     "functions:build": "npm run build --workspace @accident-black-spot-detection/functions",
     "seed": "node firebase/seed/seedBlackSpots.mjs",
     "seed:reports": "node firebase/seed/seedIncidentReports.mjs",
+    "seed:all": "node firebase/seed/seedAll.mjs",
+    "analyse": "node scripts/triggerAnalysis.mjs",
     "lint": "npm run lint --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",

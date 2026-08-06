@@ -247,4 +247,4 @@ near-duplicates in the moderation queue.
   Firestore emulator. `GOOGLE_APPLICATION_CREDENTIALS` and Application Default
   Credentials are written but never exercised.
 - **No scheduling.** Runs are triggered by an HTTP call. Running it on a schedule
-  is deployment work (Phase 14).
+  is deployment work that no phase performed; no scheduler exists.

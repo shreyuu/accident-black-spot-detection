@@ -244,7 +244,7 @@ Not a build step. The PNGs are committed, so a clone builds without either tool.
 
 | Job               | What it does                                                                                        |
 | ----------------- | --------------------------------------------------------------------------------------------------- |
-| `verify`          | `npm ci`, then format, lint, typecheck, 1,027 unit tests, script tests, secret scan.                |
+| `verify`          | `npm ci`, then format, lint, typecheck, 1,051 unit tests, script tests, secret scan.                |
 | `admin-build`     | `next build` of the moderation dashboard.                                                           |
 | `analytics`       | `uv sync --locked`, ruff, ruff format, mypy, 293 pytest tests.                                      |
 | `emulator-suites` | 151 Firestore/Storage rules tests and 8 end-to-end function tests, under `firebase emulators:exec`. |
