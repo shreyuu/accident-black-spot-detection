@@ -10,13 +10,22 @@
  * rather than taken on trust:
  *
  *   - **Site A** is a strong cluster: many reports, many distinct reporters,
- *     high severity, recent. It should produce a high-scoring candidate.
- *   - **Site B** is weaker: fewer reports, fewer people, older, lower severity.
- *     It should produce a candidate that scores visibly lower — the two
- *     together are what make the scoring legible.
- *   - **Site A carries a planted ECLAT pattern**: almost every report there is
- *     an accident at night, so `type=accident` + `time=night` must appear in
- *     its patterns. If it does not, the mining stage has regressed.
+ *     high severity, recent. It should produce the highest-scoring candidate.
+ *   - **Site B** is weaker: fewer reports, only two people, much older, lower
+ *     severity. It should score visibly lower — the two together are what make
+ *     the scoring legible, because a single number with nothing to compare it
+ *     against says nothing at all.
+ *   - **Three ECLAT patterns are planted, and they are different shapes:**
+ *       · Site A — `type=accident` + `time=night`. A pair.
+ *       · Site C — `type=crime` + `severity=high` + `time=evening`. A triple,
+ *         which a miner that only ever emits pairs would fail while still
+ *         passing site A.
+ *       · Site D — `time=morning-peak` + `severity=medium` with **mixed**
+ *         incident types, so no `type=` item can clear the threshold. Without
+ *         it the demo would imply the algorithm only rediscovers "crashes
+ *         happen at junctions", when the useful finding is usually *when*.
+ *     If any of the three is missing from its cluster's patterns, the mining
+ *     stage has regressed.
  *   - **Scattered reports** sit far from everything. DBSCAN must label them
  *     noise; if a candidate appears for one, isolated events are being turned
  *     into hazards.
@@ -24,6 +33,11 @@
  *     never influence a candidate. They are the point of the seed as much as
  *     the approved ones: if the counts move when they are added, an
  *     unmoderated report has reached the algorithm.
+ *
+ * A note on `day=weekday` / `day=weekend` items: they are real and will appear
+ * in some runs, because the timestamps are relative to the moment you run this.
+ * They are not planted and should not be relied on. The three patterns above
+ * hold whatever day you seed on.
  *
  * Usage (emulators must be running):
  *   node firebase/seed/seedIncidentReports.mjs [latitude] [longitude]
@@ -99,24 +113,24 @@ function when(daysAgo, hour) {
 const reports = [];
 
 /** Site A — strong, recent, high severity, and deliberately night-time. */
-for (let index = 0; index < 9; index += 1) {
+for (let index = 0; index < 12; index += 1) {
   const { latitude, longitude } = destination(
     centreLat,
     centreLon,
-    20 + index * 8,
-    600 + index * 8,
+    20 + index * 6,
+    600 + index * 6,
   );
   reports.push({
     id: `seed-site-a-${index}`,
-    reporterId: `seed-reporter-${index}`, // nine distinct people: strong corroboration
+    reporterId: `seed-reporter-${index}`, // twelve distinct people: strong corroboration
     type: 'accident',
     description: 'Vehicle left the carriageway on the bend; poor lighting and worn markings.',
     latitude,
     longitude,
     severity: index % 4 === 0 ? 'medium' : 'high',
-    // 02:00 for all but one, so type=accident + time=night is well above the
+    // 02:00 for all but two, so type=accident + time=night is well above the
     // 0.5 support threshold and must be found.
-    occurredAt: when(3 + index * 2, index === 8 ? 14 : 2),
+    occurredAt: when(3 + index * 2, index === 8 || index === 11 ? 14 : 2),
     status: 'approved',
   });
 }
@@ -129,7 +143,7 @@ for (let index = 0; index < 9; index += 1) {
  * apart — outside DBSCAN's 150 m neighbourhood, and the site would silently
  * fail to cluster. That is exactly what the first version of this file did.
  */
-for (let index = 0; index < 4; index += 1) {
+for (let index = 0; index < 5; index += 1) {
   const { latitude, longitude } = destination(
     centreLat,
     centreLon,
@@ -149,14 +163,79 @@ for (let index = 0; index < 4; index += 1) {
   });
 }
 
-/** Scattered — must be labelled noise, never a candidate. */
-for (let index = 0; index < 3; index += 1) {
+/**
+ * Site C — a **three-item** pattern, and a crime one.
+ *
+ * Site A proves a pair can be found. This proves ECLAT climbs past pairs:
+ * `type=crime` + `severity=high` + `time=evening` all hold for seven of eight
+ * reports, so the 3-itemset clears the 0.5 support threshold and every subset of
+ * it does too. A miner that only ever emitted pairs would still look correct
+ * against site A alone.
+ *
+ * It is also a crime cluster rather than a traffic one, which matters for the
+ * demo: this app claims to cover both, and a dataset where every pattern is a
+ * collision quietly demonstrates only half of it.
+ *
+ * The bearing step is 3 degrees at a 1200 m offset — about 63 m between
+ * consecutive reports, comfortably inside DBSCAN's 150 m neighbourhood. See the
+ * note on site B for what happens when that arithmetic is skipped.
+ */
+for (let index = 0; index < 8; index += 1) {
   const { latitude, longitude } = destination(
     centreLat,
     centreLon,
-    index * 120,
-    9000 + index * 900,
+    130 + index * 3,
+    1200 + index * 10,
   );
+  reports.push({
+    id: `seed-site-c-${index}`,
+    reporterId: `seed-reporter-c-${index}`, // eight distinct people
+    type: 'crime',
+    description: 'Bag snatched near the unlit steps; two others reported the same week.',
+    latitude,
+    longitude,
+    // One low-severity outlier, so support is 7/8 rather than a suspiciously
+    // perfect 1.0 — a pattern at exactly 100% reads like a bug in the fixture.
+    severity: index === 5 ? 'low' : 'high',
+    occurredAt: when(6 + index * 3, index === 5 ? 11 : 21),
+    status: 'approved',
+  });
+}
+
+/**
+ * Site D — a pattern that is **not** about the incident type.
+ *
+ * Deliberately mixed types, so `type=` cannot clear the threshold at all, while
+ * `time=morning-peak` and `severity=medium` both do. Without this the demo would
+ * suggest ECLAT only ever rediscovers "this is a junction where crashes happen",
+ * which is the least interesting thing it can tell you. What is worth surfacing
+ * to a moderator is that somewhere is dangerous *at a particular time*, and this
+ * is the site that shows it.
+ */
+const SITE_D_TYPES = ['accident', 'unsafe-road', 'pothole', 'accident', 'other', 'unsafe-road'];
+for (let index = 0; index < SITE_D_TYPES.length; index += 1) {
+  const { latitude, longitude } = destination(
+    centreLat,
+    centreLon,
+    320 + index * 4,
+    1000 + index * 12,
+  );
+  reports.push({
+    id: `seed-site-d-${index}`,
+    reporterId: `seed-reporter-d-${index}`,
+    type: SITE_D_TYPES[index],
+    description: 'Queueing traffic and pedestrians crossing between stationary vehicles.',
+    latitude,
+    longitude,
+    severity: index === 4 ? 'low' : 'medium',
+    occurredAt: when(9 + index * 4, index === 4 ? 15 : 8),
+    status: 'approved',
+  });
+}
+
+/** Scattered — must be labelled noise, never a candidate. */
+for (let index = 0; index < 5; index += 1) {
+  const { latitude, longitude } = destination(centreLat, centreLon, index * 71, 9000 + index * 900);
   reports.push({
     id: `seed-scattered-${index}`,
     reporterId: `seed-lonely-${index}`,
@@ -177,12 +256,12 @@ for (let index = 0; index < 3; index += 1) {
  * these are present, an unapproved report has influenced the algorithm — the
  * exact failure the whole moderation flow exists to prevent.
  */
-for (let index = 0; index < 5; index += 1) {
+for (let index = 0; index < 6; index += 1) {
   const { latitude, longitude } = destination(
     centreLat,
     centreLon,
-    24 + index * 8,
-    604 + index * 8,
+    24 + index * 6,
+    604 + index * 6,
   );
   reports.push({
     id: `seed-unmoderated-${index}`,
@@ -231,9 +310,24 @@ for (const report of reports) {
 const approved = reports.filter((r) => r.status === 'approved').length;
 const unmoderated = reports.length - approved;
 
-console.log(`  + site A       9 approved  accident   mostly 02:00, 9 distinct reporters`);
-console.log(`  + site B       4 approved  pothole    older, low severity, 2 reporters`);
-console.log(`  + scattered    3 approved  isolated   must be discarded as noise`);
+const countOf = (prefix) => reports.filter((r) => r.id.startsWith(prefix)).length;
+
+console.log(
+  `  + site A       ${countOf('seed-site-a')} approved  accident    mostly 02:00, all distinct reporters`,
+);
+console.log(
+  `  + site B       ${countOf('seed-site-b')} approved  pothole     older, low severity, 2 reporters`,
+);
+console.log(
+  `  + site C       ${countOf('seed-site-c')} approved  crime       mostly 21:00 and high severity`,
+);
+console.log(
+  `  + site D       ${countOf('seed-site-d')} approved  mixed       mostly 08:00 and medium severity`,
+);
+console.log(
+  `  + scattered    ${countOf('seed-scattered')} approved  isolated    must be discarded as noise`,
+);
 console.log(`  + unmoderated  ${unmoderated} pending/rejected inside site A — must be ignored`);
 console.log(`\nDone. ${approved} approved of ${reports.length} total.`);
-console.log('Expect the analytics service to find 2 clusters and 2 candidates.');
+console.log('Expect the analytics service to find 4 clusters and 4 candidates, with');
+console.log('site A scoring highest and site B lowest. See docs/demo.md.');

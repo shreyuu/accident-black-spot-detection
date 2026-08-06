@@ -51,7 +51,7 @@ npm run emulators
 ```
 
 ```bash
-npm run seed -- <your-latitude> <your-longitude>
+npm run seed:all -- <your-latitude> <your-longitude>
 ```
 
 ```bash

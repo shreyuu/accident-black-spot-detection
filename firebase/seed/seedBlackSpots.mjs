@@ -11,9 +11,18 @@
  *   - every risk level appears, so marker and circle styling can be compared;
  *   - radii vary, so the user's alert-radius setting visibly narrows them;
  *   - two spots deliberately overlap, to exercise the combined-warning path;
+ *   - **two spots sit beyond the 1000 m default alert radius**, one of them the
+ *     highest-risk record in the set. Raising the radius in Settings brings them
+ *     into range and changes which risk level is the worst thing nearby — which
+ *     is the only way to watch that control do anything without travelling;
  *   - **one record is unverified and one is inactive.** Neither must ever appear
  *     in the app. They are the point of the seed as much as the visible ones:
  *     if they show up, the rules or the query have regressed.
+ *
+ * Twelve records, ten of them visible. The count is not arbitrary: a handful of
+ * pins makes a map look sparse enough that a reader assumes something is broken,
+ * and the offsets are spread from 400 m to 1600 m so the set is legible at more
+ * than one zoom level.
  *
  * Usage (emulators must be running):
  *   node firebase/seed/seedBlackSpots.mjs [latitude] [longitude]
@@ -144,6 +153,102 @@ const TEMPLATES = [
     source: 'reports',
     bearing: 25,
     offsetM: 700,
+    verified: true,
+    active: true,
+  },
+  {
+    id: 'demo-college-roundabout',
+    name: 'College roundabout',
+    description:
+      'Multi-lane roundabout beside a sixth-form college. Lane discipline breaks down at the start and end of the college day.',
+    category: 'accident',
+    riskLevel: 'medium',
+    radiusM: 250,
+    severityScore: 47,
+    accidentCount: 7,
+    crimeCount: 0,
+    reportCount: 6,
+    source: 'official',
+    bearing: 75,
+    offsetM: 950,
+    verified: true,
+    active: true,
+  },
+  {
+    id: 'demo-canal-towpath',
+    name: 'Canal towpath steps',
+    description:
+      'Unlit steps between the towpath and the road. Bicycle thefts and snatch thefts reported after dusk.',
+    category: 'crime',
+    riskLevel: 'medium',
+    radiusM: 180,
+    severityScore: 44,
+    accidentCount: 0,
+    crimeCount: 11,
+    reportCount: 8,
+    source: 'reports',
+    bearing: 195,
+    offsetM: 750,
+    verified: true,
+    active: true,
+  },
+  {
+    // Deliberately outside the 1000 m default alert radius. Turning the radius
+    // up in Settings brings it into range, which is the only way to see that
+    // control do anything without driving somewhere.
+    id: 'demo-hill-descent',
+    name: 'Beacon Hill descent',
+    description:
+      'Long descent with a blind left-hand bend at the bottom. Heavy vehicles have run wide in the wet.',
+    category: 'unsafe-road',
+    riskLevel: 'high',
+    radiusM: 350,
+    severityScore: 69,
+    accidentCount: 9,
+    crimeCount: 0,
+    reportCount: 7,
+    source: 'official',
+    bearing: 300,
+    offsetM: 1450,
+    verified: true,
+    active: true,
+  },
+  {
+    id: 'demo-retail-park-exit',
+    name: 'Retail park exit',
+    description:
+      'Exit onto a 40 mph road with a short slip. Most incidents here are low-speed shunts while waiting to join.',
+    category: 'accident',
+    riskLevel: 'low',
+    radiusM: 150,
+    severityScore: 24,
+    accidentCount: 4,
+    crimeCount: 0,
+    reportCount: 3,
+    source: 'reports',
+    bearing: 110,
+    offsetM: 1250,
+    verified: true,
+    active: true,
+  },
+  {
+    // Also outside the default radius, and critical — so the pair with
+    // demo-hill-descent shows the radius setting changing *which* risk level is
+    // the highest thing in range, not merely how many pins there are.
+    id: 'demo-night-market',
+    name: 'Night market approach',
+    description:
+      'Crowded pedestrian route on market nights. Repeated reports of pickpocketing and one assault.',
+    category: 'crime',
+    riskLevel: 'critical',
+    radiusM: 220,
+    severityScore: 83,
+    accidentCount: 1,
+    crimeCount: 19,
+    reportCount: 14,
+    source: 'reports',
+    bearing: 240,
+    offsetM: 1600,
     verified: true,
     active: true,
   },
