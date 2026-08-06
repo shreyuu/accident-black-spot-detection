@@ -740,8 +740,12 @@ detail — including a table of exactly which release claims are verified and wh
 > a real release-configuration binary, but EAS did not make it — EAS needs an Expo account this
 > repository does not have, and `eas init` has never been run, so there is no `extra.eas.projectId`.
 >
-> Similarly, **the CI workflow has never run on GitHub.** Every command in every job was executed
-> locally and passed, and the YAML parses, but a green pipeline has not been observed.
+> **The CI workflow has now run on GitHub, and the first run found a real mistake.** Three of the
+> four jobs passed — verify, admin build, Python. The emulator job failed in 3 seconds:
+> `firebase-tools no longer supports Java version before 21`. The workflow pinned Java 17 while
+> every local run had used the JDK 21 the Prerequisites table above lists, so the one dependency CI
+> did not inherit from a developer machine was the one that was wrong. Pinned to 21 and commented;
+> **the fix has not itself been observed green**, because that needs another push.
 >
 > One local-build trap worth knowing: `gradlew assembleRelease` fails in `:app:mergeDexRelease` with
 > `DexArchiveMergerException` and an empty message unless the Gradle heap is raised. The real cause,
@@ -785,11 +789,13 @@ decisions and their trade-offs.
 ## Known limitations
 
 - **All fifteen phases are complete, which is not the same as production-ready.** The list below is what remains true, and it is long on purpose.
-- **No EAS build exists, and the CI workflow has never run on GitHub.** The preview _configuration_
-  was verified by building it locally into a real release APK, and every CI job's commands were run
-  locally and passed — but EAS needs an Expo account this repository does not have, and the workflow
-  has not been pushed. See the table in [`docs/builds-and-releases.md`](docs/builds-and-releases.md),
-  which states claim by claim what is verified and what is not.
+- **No EAS build exists.** The preview _configuration_ was verified by building it locally into a
+  real release APK, but EAS needs an Expo account this repository does not have and `eas init` has
+  never been run.
+- **The emulator CI job has not yet been seen passing on GitHub.** The first push ran the workflow
+  and three of four jobs were green; the fourth failed on a Java version pin, now corrected but not
+  re-run. See the table in [`docs/builds-and-releases.md`](docs/builds-and-releases.md), which states
+  claim by claim what is verified and what is not.
 - **No crash reporter is registered.** Phase 14 added the seam — `setCrashReporter` in
   `src/utils/logger.ts`, with tests — but ships no vendor. Choosing one adds a data-processing
   relationship that the privacy policy and both stores' data-safety forms have to describe, which is

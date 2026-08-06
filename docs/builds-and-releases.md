@@ -23,7 +23,8 @@ the two are never blurred.
 | CI runs everything `npm run verify` runs                | **Verified**         | `scripts/checkWorkflowParity.mjs`, which `verify` itself runs.                                                                                                        |
 | The emulator suites pass under `emulators:exec`         | **Verified**         | `npm run test:rules:ci` (151/151), `npm run test:functions:ci` (8/8), locally.                                                                                        |
 | A build produced **by EAS** succeeds                    | **Not verified**     | Needs an Expo account. See §4.                                                                                                                                        |
-| The CI workflow passes **on GitHub**                    | **Not verified**     | Has never been pushed; every job's commands were run locally. See §6.                                                                                                 |
+| Three of four CI jobs pass **on GitHub**                | **Verified**         | First push: verify, admin build and Python all green.                                                                                                                 |
+| The **emulator** CI job passes on GitHub                | **Not verified**     | Failed on the first push — the workflow pinned Java 17 and firebase-tools 15 requires 21+. Pinned to 21; the fix has not been re-run. See §6.                         |
 | An iOS build compiles against this configuration        | **Not re-verified**  | Phase 13 built and ran iOS. The plugin change since then alters only `Info.plist`, and the generated plist was checked — but no iOS compile has been run in Phase 14. |
 | A store submission succeeds                             | **Not verified**     | No developer accounts exist. See `store-preparation.md`.                                                                                                              |
 
@@ -295,6 +296,18 @@ anything has been exercised against.** Nothing has ever run on Node 20 here. The
 is either worth testing in a matrix or worth raising to match reality; it is recorded
 as a known gap rather than quietly satisfied by a green pipeline that only ever runs
 one version.
+
+### Java version
+
+`21`, pinned in the `emulator-suites` job. It is a **floor, not a preference**:
+`firebase-tools` 15 refuses to start the emulators on anything earlier, with
+`no longer supports Java version before 21`.
+
+This is the one thing the first push to GitHub caught. The job was pinned to Java 17
+and failed in three seconds, while every local run had used the JDK 21 the README lists
+as a prerequisite — so the single dependency CI did **not** inherit from a developer's
+machine was the one that was wrong, which is a fair summary of what CI is for. Keep the
+pin in step with the README's Prerequisites table; nothing enforces that they agree.
 
 ### What CI does not do
 
