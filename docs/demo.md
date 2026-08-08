@@ -337,6 +337,123 @@ Publishing one is an administrator's deliberate, audited act, in the dashboard.
 
 ---
 
+## 5a. Running it on a physical iPhone
+
+Everything above is a simulator. This is how to get it onto real hardware, which is
+the only way to reach eight of the twenty scenarios in
+[`manual-test-plan.md`](manual-test-plan.md).
+
+### A free Apple ID is enough
+
+No Developer Program membership, no $99. That is worth stating because it is not
+obvious and it is easy to assume otherwise: this app sends **local** notifications
+only — `scheduleNotificationAsync`, with no push token requested anywhere — and
+background location is not a paid-only entitlement. Nothing here needs a paid
+capability.
+
+Two limits come with a free account. Provisioning profiles expire after **seven
+days**, so the app stops launching after a week and has to be rebuilt; and you can
+have three such apps installed at once.
+
+### The blocker to know about first
+
+`npm run emulators` binds every emulator to `127.0.0.1`. Your phone cannot reach
+loopback on your Mac, so the app fails at the first network call with no clue as to
+why. Use the LAN variant instead:
+
+```bash
+npm run emulators:lan
+```
+
+It prints the address to use and warns about what it exposes — an unauthenticated
+Firestore, Auth and Storage reachable by anything on the network. Seeded demo data
+only, and a `demo-` project cannot reach Google Cloud, but do not run it on a network
+you do not trust.
+
+macOS may prompt to allow incoming connections for `node` and `java` the first time.
+It has to be allowed or nothing reaches the emulators.
+
+### Steps
+
+**1.** Xcode → Settings → Accounts → **+** → Apple ID. Sign in.
+
+**2.** Start the LAN emulators and note the printed address:
+
+```bash
+npm run emulators:lan
+```
+
+**3.** Put it in `apps/mobile/.env`:
+
+```
+EXPO_PUBLIC_FIREBASE_EMULATOR_HOST=192.168.1.20
+```
+
+Use the interface your phone is on — `en0` is Wi-Fi. This value is **inlined at build
+time**, so changing it needs a rebuild, not a Metro reload. If your Mac's address
+changes (DHCP lease, different network), the app breaks until you rebuild.
+
+**4.** Seed around where you actually are, because this time you will be physically
+walking or driving through it:
+
+```bash
+npm run seed:all -- <your-latitude> <your-longitude>
+```
+
+**5.** Connect the phone by USB and unlock it. Tap **Trust** on the phone.
+
+**6.** Build and install:
+
+```bash
+cd apps/mobile && npx expo run:ios --device
+```
+
+Pick your phone when prompted. The first build is slow.
+
+**7.** On the phone: **Settings → General → VPN & Device Management** → trust your
+developer certificate. iOS will refuse to launch the app until you do, with an
+"Untrusted Developer" dialog that does not explain where the setting is.
+
+**8.** Keep Metro running (`npm start`) while you use it. If it becomes unreachable
+the build **silently falls back to a stale cached bundle** — see
+[`troubleshooting.md`](troubleshooting.md).
+
+### If signing fails
+
+Xcode registers `com.shreyuu.accidentblackspotdetection.dev` against your Apple ID.
+If that identifier is already taken by someone else's account, change `BUNDLE_ID` in
+`apps/mobile/app.config.ts` to something under a domain you control, then rebuild.
+
+### What to test that a simulator cannot
+
+These are the outstanding scenarios, and each one is here because no amount of
+automated testing reaches it:
+
+| Scenario                         | Why hardware is required                                                                                    |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| **SOS message**                  | The SMS composer does not exist on the simulator at all. Needs a SIM. Check the copy never claims delivery. |
+| **Background notification**      | Walk or drive past a seeded spot with the app closed. Requires "Always" location.                           |
+| Draft queue surviving force-quit | Real process death, with aeroplane mode on for the submission                                               |
+| Photo upload and retry           | Real camera, real upload, real interruption                                                                 |
+| Nearby help                      | Real coordinates against live OpenStreetMap data — coverage varies enormously by region                     |
+| Emergency contact CRUD           | Real contacts, real phone numbers                                                                           |
+| Rate limit and duplicate copy    | Enforcement is tested end to end; the **wording a user reads** is not                                       |
+| Account deletion                 | Destructive, and the confirmation flow has never been seen on a device                                      |
+
+Two things to watch that only appear on hardware:
+
+- **"Always" location is a second, separate prompt.** iOS grants "While Using" first
+  and escalates days later with its own dialog. The app must handle both states, and
+  the disclosure must have been shown before either.
+- **The blue status-bar pill** appears whenever the background task runs. That is iOS
+  telling the user they are being located, and it is the disclosure working rather
+  than a defect.
+
+Record results in [`manual-test-plan.md`](manual-test-plan.md) as you go, including
+the ones that fail.
+
+---
+
 ## 6. The verification gates
 
 Nothing above proves the code is correct. These do, as far as anything can:
