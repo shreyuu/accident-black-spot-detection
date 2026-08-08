@@ -343,15 +343,25 @@ Everything above is a simulator. This is how to get it onto real hardware, which
 the only way to reach eight of the twenty scenarios in
 [`manual-test-plan.md`](manual-test-plan.md).
 
-### A free Apple ID is enough
+### A free Apple ID is enough — but this needed fixing first
 
-No Developer Program membership, no $99. That is worth stating because it is not
-obvious and it is easy to assume otherwise: this app sends **local** notifications
-only — `scheduleNotificationAsync`, with no push token requested anywhere — and
-background location is not a paid-only entitlement. Nothing here needs a paid
-capability.
+No Developer Program membership, no $99. The app sends **local** notifications only
+(`scheduleNotificationAsync`, no push token requested anywhere) and background
+location is not a paid-only entitlement.
 
-Two limits come with a free account. Provisioning profiles expire after **seven
+That was not the whole story when first attempted. `expo-notifications`' iOS plugin
+adds the `aps-environment` entitlement by **autolinking**, whether or not it is listed
+in `app.config.ts` — so the project requested the Push Notifications capability, which
+a free Personal Team **cannot provision at all**, for something no line of this app's
+code uses. `expo run:ios --device` failed with `Personal development teams do not
+support the Push Notifications capability`.
+
+It is now stripped in `plugins/withoutUnusedCapabilities.ts`, so a free account works
+without touching Xcode, and it survives `prebuild --clean` — which removing the
+capability card by hand does not. Full account, including five other things that had
+to be fixed first, in [`ios-device-builds.md`](ios-device-builds.md).
+
+Two limits still come with a free account. Provisioning profiles expire after **seven
 days**, so the app stops launching after a week and has to be rebuilt; and you can
 have three such apps installed at once.
 
@@ -410,9 +420,15 @@ cd apps/mobile && npx expo run:ios --device
 
 Pick your phone when prompted. The first build is slow.
 
+**6a.** **Enable Developer Mode** on the phone if you have not: **Settings → Privacy &
+Security → Developer Mode** → on → restart → unlock → confirm. Without it the build
+fails with `Timed out waiting for all destinations…`, which does not mention Developer
+Mode anywhere.
+
 **7.** On the phone: **Settings → General → VPN & Device Management** → trust your
-developer certificate. iOS will refuse to launch the app until you do, with an
-"Untrusted Developer" dialog that does not explain where the setting is.
+developer certificate. iOS will refuse to launch the app until you do, and the error
+blames "an invalid code signature, inadequate entitlements or its profile" — three
+causes at once, of which it is always the third.
 
 **8.** Keep Metro running (`npm start`) while you use it. If it becomes unreachable
 the build **silently falls back to a stale cached bundle** — see
@@ -423,6 +439,10 @@ the build **silently falls back to a stale cached bundle** — see
 Xcode registers `com.shreyuu.accidentblackspotdetection.dev` against your Apple ID.
 If that identifier is already taken by someone else's account, change `BUNDLE_ID` in
 `apps/mobile/app.config.ts` to something under a domain you control, then rebuild.
+
+Anything else — no certificate, `0 valid identities found`, "Failed to retrieve
+development teams" — is in [`ios-device-builds.md`](ios-device-builds.md), written
+from a real run and ordered the way the failures actually appear.
 
 ### What to test that a simulator cannot
 

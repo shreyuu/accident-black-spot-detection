@@ -478,16 +478,17 @@ npm run format
 
 ## Documentation
 
-Thirteen documents plus an ADR. Each one exists because something in it was not obvious from the code.
+Fourteen documents plus an ADR. Each one exists because something in it was not obvious from the code.
 
 **Start here**
 
-| Document                                        | What it answers                                                        |
-| ----------------------------------------------- | ---------------------------------------------------------------------- |
-| [`architecture.md`](docs/architecture.md)       | How the pieces fit, and which of them run with security rules bypassed |
-| [`demo.md`](docs/demo.md)                       | Running the whole system, with what you should see at each step        |
-| [`data-model.md`](docs/data-model.md)           | Every collection, who can touch it, and the indexes each query needs   |
-| [`troubleshooting.md`](docs/troubleshooting.md) | Organised by symptom, because you do not yet know the cause            |
+| Document                                            | What it answers                                                                                         |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| [`architecture.md`](docs/architecture.md)           | How the pieces fit, and which of them run with security rules bypassed                                  |
+| [`demo.md`](docs/demo.md)                           | Running the whole system, with what you should see at each step                                         |
+| [`data-model.md`](docs/data-model.md)               | Every collection, who can touch it, and the indexes each query needs                                    |
+| [`troubleshooting.md`](docs/troubleshooting.md)     | Organised by symptom, because you do not yet know the cause                                             |
+| [`ios-device-builds.md`](docs/ios-device-builds.md) | Getting a build onto a real iPhone with a free Apple Account, and the six Apple requirements in the way |
 
 **How specific features work, and what they do not promise**
 
@@ -614,7 +615,7 @@ This project is being built in phases. **All fifteen phases are complete.**
 | 14    | CI/CD, builds, release preparation       | ✅ Complete (see caveat§) |
 | 15    | Documentation and demonstration          | ✅ Complete               |
 
-**Phase 15 closed the set.** The documentation is now thirteen documents plus an ADR, indexed above
+**Phase 15 closed the set.** The documentation is now fourteen documents plus an ADR, indexed above
 and each one written because something in it was not obvious from the code — including
 [`architecture.md`](docs/architecture.md) and [`data-model.md`](docs/data-model.md), which did not
 exist before, and [`troubleshooting.md`](docs/troubleshooting.md), which collects every failure in
