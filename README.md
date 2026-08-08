@@ -182,6 +182,11 @@ work without them:
 npm run emulators
 ```
 
+> **Testing on a physical device?** `npm run emulators` binds to `127.0.0.1`, which a phone cannot
+> reach. Use `npm run emulators:lan` instead — it exposes them on every interface and prints the
+> address to put in `apps/mobile/.env`. See the iPhone walkthrough in
+> [`docs/demo.md`](docs/demo.md).
+
 This builds the Cloud Functions first and then starts Auth, Firestore, Storage and Functions. The
 Emulator UI is at <http://localhost:4000> — useful for inspecting accounts and documents while
 testing. Emulator data is in-memory and discarded on exit; use `npm run emulators:persist` to keep

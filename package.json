@@ -21,6 +21,7 @@
     "emulators": "npm run build --workspace @accident-black-spot-detection/functions && firebase emulators:start --only auth,firestore,storage,functions",
     "emulators:persist": "npm run build --workspace @accident-black-spot-detection/functions && firebase emulators:start --only auth,firestore,storage,functions --import=.firebase-data --export-on-exit=.firebase-data",
     "emulators:norun-functions": "firebase emulators:start --only auth,firestore,storage",
+    "emulators:lan": "npm run build --workspace @accident-black-spot-detection/functions && node scripts/emulatorsLan.mjs",
     "functions:build": "npm run build --workspace @accident-black-spot-detection/functions",
     "seed": "node firebase/seed/seedBlackSpots.mjs",
     "seed:reports": "node firebase/seed/seedIncidentReports.mjs",
@@ -49,5 +50,10 @@
   },
   "devDependencies": {
     "prettier": "^3.9.6"
+  },
+  "dependencies": {
+    "expo": "~57.0.7",
+    "react": "19.2.3",
+    "react-native": "0.86.0"
   }
 }
