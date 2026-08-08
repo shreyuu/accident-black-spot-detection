@@ -1,4 +1,9 @@
-import { withAndroidManifest, withInfoPlist, type ConfigPlugin } from 'expo/config-plugins';
+import {
+  withAndroidManifest,
+  withEntitlementsPlist,
+  withInfoPlist,
+  type ConfigPlugin,
+} from 'expo/config-plugins';
 
 /**
  * Remove capabilities the generated native projects declare but this app never
@@ -21,6 +26,20 @@ import { withAndroidManifest, withInfoPlist, type ConfigPlugin } from 'expo/conf
  *     `android/app/src/debug/AndroidManifest.xml`, where it belongs. The copy in
  *     the main manifest changes nothing for a debug build and affects only
  *     release builds, which are exactly the ones that must not ask for it.
+ *   - `expo-notifications`' iOS plugin adds the `aps-environment` entitlement —
+ *     the Apple Push Notification service capability — unconditionally, and it
+ *     does so through **autolinking**, so it applies whether or not the plugin is
+ *     listed in `app.config.ts`. It has therefore been present since Phase 4,
+ *     when the package was added. This app sends only *local* notifications:
+ *     `alertDelivery.ts` calls `scheduleNotificationAsync` and nothing anywhere
+ *     requests a push token.
+ *
+ * The APNs one is not merely untidy. A **free Apple Personal Team cannot
+ * provision a profile containing it at all**, so `expo run:ios --device` fails
+ * with "Personal development teams do not support the Push Notifications
+ * capability" — for an entitlement no line of this app's code uses. Removing it
+ * here rather than in Xcode is what makes that fix survive `prebuild --clean`.
+ * See `docs/ios-device-builds.md`.
  *
  * Both are submission risks rather than tidiness. App Review asks what each
  * background mode is for, Play treats `SYSTEM_ALERT_WINDOW` as a sensitive
@@ -86,6 +105,18 @@ const REQUIRED_BACKGROUND_MODES = ['location'] as const;
 const UNUSED_ANDROID_PERMISSIONS = ['android.permission.SYSTEM_ALERT_WINDOW'] as const;
 
 /**
+ * iOS entitlements to strip.
+ *
+ * `aps-environment` is the Apple Push Notification service capability. If this
+ * app ever sends a real push, this list is wrong and the entitlement has to come
+ * back — along with a **paid** Apple Developer Program team, because a Personal
+ * Team cannot provision it. `scripts/__tests__/noRemotePush.test.mjs` fails if a
+ * push-token API appears anywhere in the app, and also fails if this list stops
+ * naming the entitlement — so the two halves cannot drift apart.
+ */
+const UNUSED_IOS_ENTITLEMENTS = ['aps-environment'] as const;
+
+/**
  * Android permissions the app depends on. Every one is either requested from the
  * user at runtime or required for the foreground service to start at all.
  */
@@ -148,7 +179,20 @@ const withoutUnusedAndroidPermissions: ConfigPlugin = (config) =>
     return modConfig;
   });
 
+const withoutUnusedIosEntitlements: ConfigPlugin = (config) =>
+  withEntitlementsPlist(config, (modConfig) => {
+    for (const entitlement of UNUSED_IOS_ENTITLEMENTS) {
+      // `delete` rather than setting `false` or `""`: Xcode reads the *presence*
+      // of the key as the capability being requested, so an empty value is still
+      // a Push Notifications capability and still fails to provision.
+      delete modConfig.modResults[entitlement];
+    }
+    return modConfig;
+  });
+
 export const withoutUnusedCapabilities: ConfigPlugin = (config) =>
-  withoutUnusedAndroidPermissions(withoutUnusedBackgroundModes(config));
+  withoutUnusedIosEntitlements(
+    withoutUnusedAndroidPermissions(withoutUnusedBackgroundModes(config)),
+  );
 
 export default withoutUnusedCapabilities;

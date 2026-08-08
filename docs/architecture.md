@@ -222,3 +222,4 @@ app implies it contacts the emergency services, because it does not.
 | Builds, CI and releases              | [`builds-and-releases.md`](builds-and-releases.md)     |
 | Why anything is the way it is        | [`phase-0-audit.md`](phase-0-audit.md), [`adr/`](adr/) |
 | When something will not start        | [`troubleshooting.md`](troubleshooting.md)             |
+| Building for a real iPhone           | [`ios-device-builds.md`](ios-device-builds.md)         |
