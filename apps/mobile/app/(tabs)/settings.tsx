@@ -16,13 +16,24 @@ import {
 import { env } from '@/config/env';
 import { DRIVING_DISCLAIMER, LOCATION_ACCURACY_DISCLAIMER } from '@/constants/disclaimer';
 import { BackgroundMonitoringDisclosure } from '@/features/alerts/BackgroundMonitoringDisclosure';
+import { describeBackgroundRuns } from '@/features/alerts/backgroundRunCopy';
 import { useBackgroundMonitoring } from '@/features/alerts/useBackgroundMonitoring';
+import { useBackgroundRunHealth } from '@/features/alerts/useBackgroundRunHealth';
 import { useAuth } from '@/features/auth/AuthProvider';
 import { logout } from '@/features/auth/authService';
 import { AlertRadiusPicker } from '@/features/settings/AlertRadiusPicker';
 import { usePreferences } from '@/features/settings/usePreferences';
 import { useTheme, useThemePreference, type ThemePreference } from '@/theme';
 import { toAppError, type AppError } from '@/utils/errors';
+import { useNow } from '@/utils/useNow';
+
+/**
+ * How often the "last ran N minutes ago" caption refreshes.
+ *
+ * Matches the interval inside `useBackgroundRunHealth` so the caption and the
+ * summary's staleness flag never disagree by a tick.
+ */
+const RUN_HEALTH_CLOCK_MS = 60 * 1000;
 
 const THEME_OPTIONS: readonly { value: ThemePreference; label: string }[] = [
   { value: 'system', label: 'System' },
@@ -382,6 +393,20 @@ function BackgroundMonitoringSection() {
         </AppText>
       ) : null}
 
+      {/*
+        Only while the feature is actually meant to be running. Shown to anyone
+        else it would be a report about a task that is correctly doing nothing.
+
+        This is the only place in the app where a user can find out whether
+        background monitoring is doing anything at all. Everything else about
+        the feature is a claim — the switch says "on", the status line says
+        "active" — and neither survives the OS quietly declining to schedule the
+        task. See `backgroundRunHealth.ts` for why that failure is invisible
+        otherwise, and `backgroundRunCopy.ts` for why this reports observations
+        rather than declaring the feature working or broken.
+      */}
+      {decision.status === 'active' ? <BackgroundRunHealthNote /> : null}
+
       {decision.status === 'permission-blocked' ? (
         <AppButton
           label="Open device settings"
@@ -423,6 +448,40 @@ function BackgroundMonitoringSection() {
         onCancel={() => setShowDisclosure(false)}
         testID="background-monitoring-disclosure"
       />
+    </View>
+  );
+}
+
+/**
+ * What the background task has actually been doing.
+ *
+ * Rendered as plain captions rather than anything that looks like a status
+ * indicator. A green tick would be a claim the app cannot support — the record
+ * shows what happened on past runs, not that the next one will happen.
+ */
+function BackgroundRunHealthNote() {
+  const theme = useTheme();
+  const now = useNow(RUN_HEALTH_CLOCK_MS);
+  const { summary, loaded } = useBackgroundRunHealth();
+
+  // Nothing at all until the first read resolves. Flashing "has not run yet"
+  // and then replacing it a moment later reads as a fault that was not there.
+  if (!loaded) {
+    return null;
+  }
+
+  const { headline, advice } = describeBackgroundRuns(summary, now);
+
+  return (
+    <View style={{ gap: theme.spacing.xs }} testID="background-run-health">
+      <AppText variant="caption" color="textSubtle">
+        {headline}
+      </AppText>
+      {advice !== null ? (
+        <AppText variant="caption" color={summary.failures > 0 ? 'danger' : 'textMuted'}>
+          {advice}
+        </AppText>
+      ) : null}
     </View>
   );
 }

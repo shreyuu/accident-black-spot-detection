@@ -65,22 +65,50 @@ export async function createTestEnvironment() {
  * `grantRole.mjs`. So a test that grants itself `role: 'admin'` here is
  * faithfully simulating an account an administrator promoted — it is not a
  * shortcut around the rules.
+ *
+ * ## Why `email_verified` is true here
+ *
+ * These helpers stand for an *established* account, and an established account
+ * has confirmed its address — `hasVerifiedEmail()` in the rules requires it
+ * before a report may be created. Defaulting to `false` would have made the
+ * claim invisible: every report test would fail at once, somebody would add the
+ * claim to make them pass, and the rule would then be exercised only by
+ * accident. Defaulting to `true` keeps the ordinary case ordinary and forces the
+ * unverified case to be written on purpose — see `asUnverifiedUser`.
  */
 export function asUser(env, uid) {
-  return env.authenticatedContext(uid, { role: 'user' }).firestore();
+  return env.authenticatedContext(uid, { role: 'user', email_verified: true }).firestore();
 }
 
 export function asModerator(env, uid) {
-  return env.authenticatedContext(uid, { role: 'moderator' }).firestore();
+  return env.authenticatedContext(uid, { role: 'moderator', email_verified: true }).firestore();
 }
 
 export function asAdmin(env, uid) {
-  return env.authenticatedContext(uid, { role: 'admin' }).firestore();
+  return env.authenticatedContext(uid, { role: 'admin', email_verified: true }).firestore();
 }
 
 /** No claims at all, as a brand-new account has before any role is granted. */
 export function asRolelessUser(env, uid) {
   return env.authenticatedContext(uid, {}).firestore();
+}
+
+/**
+ * A signed-in account that has not confirmed its email address.
+ *
+ * The state every account is in between registering and clicking the link. Such
+ * an account may do everything a verified one can *except* create a report —
+ * read black spots, receive warnings, manage emergency contacts, send an SOS.
+ * See `hasVerifiedEmail()` in the rules for why the line is drawn there.
+ *
+ * The claim is written explicitly rather than omitted, because the two are not
+ * the same thing and the rule has to treat both as "not verified": a token
+ * issued before verification carries `email_verified: false`, while a token
+ * from a provider that never sets it has no claim at all. `asRolelessUser`
+ * covers the second case.
+ */
+export function asUnverifiedUser(env, uid) {
+  return env.authenticatedContext(uid, { role: 'user', email_verified: false }).firestore();
 }
 
 export function asAnonymous(env) {

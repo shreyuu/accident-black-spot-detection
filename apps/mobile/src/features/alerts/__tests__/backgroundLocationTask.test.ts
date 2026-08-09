@@ -10,6 +10,7 @@ import {
   BACKGROUND_LOCATION_TASK,
   handleBackgroundLocations,
 } from '@/features/alerts/backgroundLocationTask';
+import { noteBackgroundRun } from '@/features/alerts/backgroundRunHealthStore';
 import { loadZoneStates, saveZoneStates } from '@/features/alerts/zoneStateStore';
 import { loadNearbyBlackSpots } from '@/features/black-spots/blackSpotCache';
 import { getFirebaseAuth } from '@/services/firebase/app';
@@ -34,6 +35,9 @@ jest.mock('@/features/alerts/zoneStateStore', () => ({
   loadZoneStates: jest.fn(),
   saveZoneStates: jest.fn(),
 }));
+jest.mock('@/features/alerts/backgroundRunHealthStore', () => ({
+  noteBackgroundRun: jest.fn(),
+}));
 jest.mock('@/features/black-spots/blackSpotCache', () => ({ loadNearbyBlackSpots: jest.fn() }));
 jest.mock('@/services/firebase/app', () => ({ getFirebaseAuth: jest.fn() }));
 
@@ -43,6 +47,7 @@ const mockedRecordAlert = jest.mocked(recordAlert);
 const mockedLoadSnapshot = jest.mocked(loadBackgroundAlertSnapshot);
 const mockedLoadZoneStates = jest.mocked(loadZoneStates);
 const mockedSaveZoneStates = jest.mocked(saveZoneStates);
+const mockedNoteRun = jest.mocked(noteBackgroundRun);
 const mockedLoadCache = jest.mocked(loadNearbyBlackSpots);
 const mockedGetAuth = jest.mocked(getFirebaseAuth);
 
@@ -282,5 +287,67 @@ describe('handleBackgroundLocations', () => {
 
     expect(mockedDeliverAlert).not.toHaveBeenCalled();
     expect(mockedSaveZoneStates).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The run record is the only evidence that this task executed at all — see
+ * `backgroundRunHealth.ts`. Every exit point must leave one, because a path
+ * that returns without recording is indistinguishable from a task the OS never
+ * started, which is precisely the condition the record exists to expose.
+ */
+describe('handleBackgroundLocations run telemetry', () => {
+  it('records a delivered alert', async () => {
+    await handleBackgroundLocations([makeFix(51.5074, -0.1278)], NOW);
+
+    expect(mockedDeliverAlert).toHaveBeenCalled();
+    expect(mockedNoteRun).toHaveBeenCalledWith('alert-delivered', NOW);
+  });
+
+  it('records a run that evaluated and found nothing', async () => {
+    // Far enough away that no zone is entered.
+    await handleBackgroundLocations([makeFix(0, 0)], NOW);
+
+    expect(mockedDeliverAlert).not.toHaveBeenCalled();
+    expect(mockedNoteRun).toHaveBeenCalledWith('evaluated-no-alert', NOW);
+  });
+
+  it('records missing coverage', async () => {
+    mockedLoadCache.mockResolvedValue(null);
+
+    await handleBackgroundLocations([makeFix(51.5074, -0.1278)], NOW);
+
+    expect(mockedNoteRun).toHaveBeenCalledWith('no-cached-spots', NOW);
+  });
+
+  it('records a batch with no usable fix', async () => {
+    await handleBackgroundLocations([makeFix(Number.NaN, Number.NaN)], NOW);
+
+    expect(mockedNoteRun).toHaveBeenCalledWith('no-valid-fix', NOW);
+  });
+
+  it('records the task stopping itself when nobody has opted in', async () => {
+    mockedLoadSnapshot.mockResolvedValue(null);
+
+    await handleBackgroundLocations([makeFix(51.5074, -0.1278)], NOW);
+
+    expect(mockedNoteRun).toHaveBeenCalledWith('stopped', NOW);
+  });
+
+  it('records the task stopping itself when warnings are switched off', async () => {
+    mockedLoadSnapshot.mockResolvedValue(snapshot({ alertsEnabled: false }));
+
+    await handleBackgroundLocations([makeFix(51.5074, -0.1278)], NOW);
+
+    expect(mockedNoteRun).toHaveBeenCalledWith('stopped', NOW);
+  });
+
+  // One record per invocation, whatever the batch contained. A run that warned
+  // about three hazards is still one run, and counting it three times would
+  // make the history look busier than the task actually was.
+  it('records exactly one run per invocation', async () => {
+    await handleBackgroundLocations([makeFix(51.5074, -0.1278)], NOW);
+
+    expect(mockedNoteRun).toHaveBeenCalledTimes(1);
   });
 });

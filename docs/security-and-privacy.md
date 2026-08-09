@@ -272,11 +272,76 @@ Stated because a security document that only lists wins is not one.
   a large corpus. Acceptable because the label supports a judgement a moderator
   makes alongside the report's content, and authorises nothing.
 - **The rate limit is per account, not per person.** Someone willing to register
-  repeatedly can file more than ten reports a day. Bounding that needs
-  registration controls, which this phase does not add.
+  repeatedly can file more than ten reports a day. The verified-email
+  requirement (§8) raises the price of each extra account from nothing to a
+  working inbox, which is a real cost but not a large one. Bounding it properly
+  needs App Check or a paid identity provider.
 - **No App Check.** Nothing proves a request comes from a genuine build of this
   app rather than a script driving the SDK with valid credentials. Every rule
   here is written on the assumption that the client is hostile, which is the
   right posture regardless, but App Check would raise the cost of the attempt.
 - **The analytics service has still only run against the emulator.** Its
   service-account and ADC paths are written but never exercised.
+
+---
+
+## 8. A verified email address, for report creation only
+
+The rate limit in §2 is exact, carefully coupled, and bounded by nothing scarce.
+It counts per **account**, and until this rule an account cost nothing: the Auth
+service accepts any address without checking it, so the price of ten more
+submissions was one more sign-up. Every other rule in this project protects
+data. This one protects the moderation queue, which is a human being — the only
+resource here that does not scale, and whose exhaustion means genuine reports go
+unread.
+
+```
+allow create: if isSignedIn()
+              && hasVerifiedEmail()
+              && …
+```
+
+```
+function hasVerifiedEmail() {
+  return isSignedIn() && request.auth.token.get('email_verified', false) == true;
+}
+```
+
+`email_verified` is a standard claim the Auth service sets and no client can
+write. The `.get(…, false)` default matters: a token from a provider that never
+sets the claim must read as _not verified_ rather than raise, because an
+erroring rule denies for the wrong reason and takes the rest of the evaluation
+with it. There is a test for exactly that case.
+
+### What this does not cover
+
+It is not a serious barrier to a determined attacker — disposable addresses
+exist. It changes abuse from free to fiddly, which is the most that is available
+without App Check or a paid identity provider. It is a floor, not a wall.
+
+### Why the scope is this narrow
+
+This gates report creation and **nothing else**. Two deliberate exclusions:
+
+- **Emergency contacts and SOS.** Someone in an emergency must never be told to
+  go and check their email first. There is also no abuse case: those writes
+  touch only the caller's own documents.
+- **Reading black spots and receiving warnings.** A user who never confirms
+  their address still gets every safety feature. What they lose is the ability
+  to add to the moderation queue.
+
+`tests/ownership.test.mjs` asserts both exclusions, so widening this later has
+to be a deliberate act rather than a side effect of an edit. It also asserts the
+**happy path first** — a verified account can file a report — because a clause
+that denied everyone would otherwise pass a suite made only of refusals, which
+is precisely how the Phase 13 `hasNoPrivilegedFields` bug survived eleven
+phases.
+
+### The operational consequence
+
+The claim lives inside the ID token, so an account that verifies while signed in
+keeps being refused until its token is refreshed. `refreshEmailVerification` in
+`authService.ts` forces that, behind the report screen's "I have confirmed my
+address" button. Against the emulator, where no mail is delivered, see
+[`demo.md`](demo.md) for both the real link flow and the `npm run confirm-email`
+shortcut.

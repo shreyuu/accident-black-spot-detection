@@ -3,9 +3,12 @@ import { after, before, beforeEach, describe, it } from 'node:test';
 import {
   asAnonymous,
   asModerator,
+  asRolelessUser,
+  asUnverifiedUser,
   asUser,
   assertFails,
   assertSucceeds,
+  blackSpotFixture,
   contactFixture,
   createTestEnvironment,
   reportFixture,
@@ -146,6 +149,61 @@ describe('incidentReports ownership', () => {
           report: { hiddenPayload: 'x'.repeat(500) },
         }),
       );
+    });
+  });
+
+  /**
+   * The verified-email requirement on report creation.
+   *
+   * The moderation queue is a human being, and until this rule existed the only
+   * thing bounding how much could be pushed into it was an attacker's patience:
+   * the rate limit is per account, and an account cost nothing. See
+   * `hasVerifiedEmail()` in `firestore.rules`.
+   *
+   * The happy path is asserted **first and explicitly**, not left implied by the
+   * tests above. A rule that denies everything passes every test that only
+   * checks refusals — that is exactly how the Phase 13 `hasNoPrivilegedFields`
+   * bug survived eleven phases — and a mistake in this clause would silently
+   * stop every user in the world from filing a report.
+   */
+  describe('a verified email address', () => {
+    it('lets a verified account file a report', async () => {
+      const db = asUser(env, 'author');
+      await assertSucceeds(submitReportBatch(db, { reporterId: 'author', reportId: 'verified' }));
+    });
+
+    it('refuses a report from an account that has not verified its address', async () => {
+      const db = asUnverifiedUser(env, 'author');
+      await assertFails(submitReportBatch(db, { reporterId: 'author', reportId: 'unverified' }));
+    });
+
+    // A token from a provider that never sets the claim must read as "not
+    // verified" rather than erroring — an erroring rule is a denial, but for the
+    // wrong reason, and it would take the rest of the file down with it.
+    it('refuses a report when the token carries no email_verified claim at all', async () => {
+      const db = asRolelessUser(env, 'author');
+      await assertFails(submitReportBatch(db, { reporterId: 'author', reportId: 'no-claim' }));
+    });
+
+    // The scope boundary, asserted so a later widening is a deliberate act
+    // rather than a side effect. Someone in an emergency must never be told to
+    // check their email first.
+    it('does not block an unverified account from managing emergency contacts', async () => {
+      await seed(env, 'emergencyContacts/mine', contactFixture({ userId: 'owner' }));
+      const db = asUnverifiedUser(env, 'owner');
+
+      await assertSucceeds(db.doc('emergencyContacts/mine').get());
+      await assertSucceeds(
+        db
+          .doc('emergencyContacts/mine')
+          .update({ phone: '+447700900999', updatedAt: serverTimestamp() }),
+      );
+    });
+
+    it('does not block an unverified account from reading black spots', async () => {
+      await seed(env, 'blackSpots/spot-1', blackSpotFixture());
+      const db = asUnverifiedUser(env, 'reader');
+      await assertSucceeds(db.doc('blackSpots/spot-1').get());
     });
   });
 });

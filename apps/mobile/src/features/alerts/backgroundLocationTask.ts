@@ -5,6 +5,7 @@ import { deliverAlert } from '@/features/alerts/alertDelivery';
 import { recordAlert } from '@/features/alerts/alertLogRepository';
 import { loadBackgroundAlertSnapshot } from '@/features/alerts/backgroundAlertSnapshot';
 import { partitionBackgroundAlerts } from '@/features/alerts/backgroundMonitoringPolicy';
+import { noteBackgroundRun } from '@/features/alerts/backgroundRunHealthStore';
 import { DEFAULT_PROXIMITY_CONFIG, evaluateProximity } from '@/features/alerts/proximityEngine';
 import { loadZoneStates, saveZoneStates } from '@/features/alerts/zoneStateStore';
 import { loadNearbyBlackSpots } from '@/features/black-spots/blackSpotCache';
@@ -117,16 +118,19 @@ export async function handleBackgroundLocations(
   // where sign-out cleared it. Absence is never read as "use the defaults".
   if (snapshot === null) {
     await stopUpdatesFromTask('no preferences snapshot');
+    await noteBackgroundRun('stopped', now);
     return;
   }
 
   if (!snapshot.backgroundMonitoringEnabled || !snapshot.alertsEnabled) {
     await stopUpdatesFromTask('the user has switched background warnings off');
+    await noteBackgroundRun('stopped', now);
     return;
   }
 
   const location = latestValidPosition(locations);
   if (location === null) {
+    await noteBackgroundRun('no-valid-fix', now);
     return;
   }
 
@@ -137,6 +141,9 @@ export async function handleBackgroundLocations(
   const cached = await loadNearbyBlackSpots(location);
   if (cached === null || cached.spots.length === 0) {
     logger.debug('backgroundLocationTask', 'No cached black spots cover this area; skipping');
+    // Recorded rather than merely logged: this is the outcome a user can
+    // actually do something about, and Settings tells them what.
+    await noteBackgroundRun('no-cached-spots', now);
     return;
   }
 
@@ -190,6 +197,11 @@ export async function handleBackgroundLocations(
       riskLevel: alert.blackSpot.riskLevel,
     });
   }
+
+  // One record per invocation, not per alert: the question this answers is
+  // "did the task run", and a batch that warned about three hazards is still
+  // one run.
+  await noteBackgroundRun(deliver.length > 0 ? 'alert-delivered' : 'evaluated-no-alert', now);
 }
 
 TaskManager.defineTask<BackgroundLocationPayload>(
@@ -213,6 +225,10 @@ TaskManager.defineTask<BackgroundLocationPayload>(
       await handleBackgroundLocations(locations);
     } catch (taskError) {
       logger.error('backgroundLocationTask', 'Background evaluation failed', taskError);
+      // The one outcome the function above cannot record for itself. Without
+      // this, a task that throws on every invocation leaves a history that
+      // simply stops — indistinguishable from a phone that has not moved.
+      await noteBackgroundRun('failed');
     }
   },
 );

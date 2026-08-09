@@ -13,6 +13,20 @@ expo-env.d.ts
 .kotlin/
 *.orig.*
 
+# The same output, one directory up. `expo prebuild` run from the repository
+# root instead of `apps/mobile` writes here, and in Phase 14 it did: commit
+# cbd8a2d tracked a full Xcode project at `/ios` carrying the Expo template's
+# default identity (`org.name.accidentblackspotdetection`, version 1.0) rather
+# than this app's (`com.shreyuu.accidentblackspotdetection`, 0.1.0). Nothing
+# referenced it — `docs/ios-device-builds.md` documents the *real* device build,
+# which `expo run:ios` generates under `apps/mobile/ios/`.
+#
+# The rule above did not catch it because it is anchored to `/apps/mobile/`, and
+# no gate objected because `.prettierignore` and ESLint are scoped the same way.
+# `scripts/nativeBuildOutput.mjs`, run by `test:scripts`, is the gate that does.
+/ios/
+/android/
+
 # Signing material and provisioning. Never commit.
 *.jks
 *.p8

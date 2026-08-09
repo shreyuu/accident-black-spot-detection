@@ -140,6 +140,41 @@ npm run android
 Register an account — any email and a password of eight characters or more. The
 Auth emulator accepts anything and sends nothing.
 
+### Confirming the address
+
+Everything works at this point **except filing a report**. The rules refuse a
+report from an account that has not confirmed its email address — see
+`hasVerifiedEmail()` in `firebase/firestore.rules` for why, and note the scope:
+warnings, the map, emergency contacts and SOS are all deliberately ungated.
+
+The Auth emulator delivers no email, so there are two ways through. Walk the
+first one once, because it is the path a real user takes.
+
+**1. The real flow.** The app calls `sendEmailVerification` on registration, and
+the emulator does generate the link — it just has nowhere to send it. Read it
+back:
+
+```bash
+curl -s http://127.0.0.1:9099/emulator/v1/projects/demo-accident-black-spot-detection/oobCodes
+```
+
+Open the `oobLink` from the newest entry in a browser. It returns a confirmation
+page, and the account is now verified exactly as it would be in production. The
+same list is in the Emulator UI under Authentication.
+
+**2. The shortcut**, for every run after that:
+
+```bash
+FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099 npm run confirm-email -- you@example.test
+```
+
+Either way, **the app is still holding a token minted before the change**.
+`email_verified` is a claim inside that token and the rules read the token, not
+the account — so tap **I have confirmed my address** on the Report tab, which
+forces the refresh. Signing out and in again does the same thing. Without it the
+report screen keeps refusing, which is the single most confusing thing about
+this flow and the reason the button exists.
+
 Then set the simulator's location to the coordinates you seeded around.
 
 <details>
