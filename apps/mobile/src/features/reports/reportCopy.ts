@@ -68,6 +68,33 @@ export const REPORT_SUBMISSION_NOTICE =
   'other people unless it is approved. Report emergencies to the emergency services first — this ' +
   'app does not contact them.';
 
+/**
+ * Shown instead of the form when the account's address is not yet confirmed.
+ *
+ * The wording has two jobs and one trap to avoid. It has to explain a refusal
+ * the user did not expect, and it has to be clear that **only reporting** is
+ * affected — somebody who reads this as "the app does not work until you verify"
+ * may stop relying on warnings or on SOS, neither of which is gated. Saying what
+ * still works is the safety-relevant half of this message, not padding.
+ *
+ * See `hasVerifiedEmail()` in `firestore.rules` for why the rule exists.
+ */
+export const REPORT_UNVERIFIED_EMAIL_TITLE = 'Confirm your email address to report';
+
+export const REPORT_UNVERIFIED_EMAIL_NOTICE =
+  'Reports go to a human moderator, so we ask you to confirm your email address before filing one. ' +
+  'Open the link we sent you, then come back and tap “I have confirmed my address”.';
+
+/** The reassurance that stops this reading as "the app is switched off". */
+export const REPORT_UNVERIFIED_EMAIL_STILL_WORKS =
+  'Warnings, the map, your emergency contacts and SOS all keep working — this only affects filing ' +
+  'new reports.';
+
+/** Shown after a refresh that found the address still unconfirmed. */
+export const REPORT_STILL_UNVERIFIED_NOTICE =
+  'That address is still unconfirmed. The link can take a moment to arrive, and it may be in a spam ' +
+  'folder.';
+
 /** Shown after a successful submission. */
 export const REPORT_SUBMITTED_NOTICE =
   'Thank you. Your report has been received and is waiting for a moderator to review it. You can ' +

@@ -7,6 +7,7 @@ import {
   clearBackgroundAlertSnapshot,
   saveBackgroundAlertSnapshot,
 } from '@/features/alerts/backgroundAlertSnapshot';
+import { clearBackgroundRunHealth } from '@/features/alerts/backgroundRunHealthStore';
 import { clearZoneStates } from '@/features/alerts/zoneStateStore';
 import { clearDrafts } from '@/features/reports/draftStore';
 import { clearPreferences } from '@/features/settings/preferenceStore';
@@ -114,6 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           await Promise.all([
             clearBackgroundAlertSnapshot(),
             clearZoneStates(),
+            clearBackgroundRunHealth(),
             clearPreferences(),
             clearDrafts(),
           ]);

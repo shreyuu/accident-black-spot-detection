@@ -13,7 +13,7 @@
     "lint": "eslint . --max-warnings=0",
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc --noEmit",
-    "test": "jest",
+    "test": "jest --coverage",
     "test:watch": "jest --watch",
     "doctor": "npx expo-doctor@latest"
   },

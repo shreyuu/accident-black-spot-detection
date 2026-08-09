@@ -65,6 +65,41 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
+    // Has the caller proved they control the address they signed up with?
+    //
+    // ## Why this exists, and why only on report creation
+    //
+    // Report submission is rate limited per *account*, and until now an account
+    // cost nothing to create: the Auth emulator and a real project both accept
+    // any address without checking it, so the price of ten more submissions was
+    // one more sign-up. The rate limit below is carefully written and exactly
+    // enforced, and it was still bounded by an attacker's patience rather than
+    // by anything scarce.
+    //
+    // The queue it protects is a **human moderator**. Everything else in this
+    // file protects data; this protects the one resource that does not scale,
+    // and whose exhaustion means genuine reports go unread. Requiring a verified
+    // address does not make abuse impossible — it makes each account cost a
+    // working inbox, which is the cheapest real cost available without adding
+    // App Check or a paid identity provider.
+    //
+    // **Scope is deliberately narrow.** This gates report creation and nothing
+    // else. Emergency contacts and SOS are explicitly *not* gated: someone in an
+    // emergency must never be told to go and check their email first, and the
+    // abuse case that justifies this rule does not exist for a feature that
+    // writes only to the caller's own document. Reading black spots and
+    // receiving warnings are likewise ungated — a user who never verifies still
+    // gets every safety feature except the ability to add to the moderation
+    // queue.
+    //
+    // `email_verified` is a standard claim the Auth service sets; it cannot be
+    // written by a client. Absent on a token that predates verification, hence
+    // the explicit comparison rather than a truthiness check — an undefined
+    // claim must read as false, not as an error.
+    function hasVerifiedEmail() {
+      return isSignedIn() && request.auth.token.get('email_verified', false) == true;
+    }
+
     // -------------------------------------------------------------------------
     // Roles (Phase 7)
     // -------------------------------------------------------------------------
@@ -344,6 +379,11 @@ service cloud.firestore {
       allow get, list: if isSignedIn() && resource.data.reporterId == request.auth.uid;
 
       allow create: if isSignedIn()
+                    // See `hasVerifiedEmail`. This is the only place in the file
+                    // that requires it: it makes an account cost an inbox, which
+                    // is what stands between a scripted sign-up loop and the
+                    // moderator's queue.
+                    && hasVerifiedEmail()
                     && request.resource.data.reporterId == request.auth.uid
                     && isValidReportShape(request.resource.data)
                     && hasNoModerationFields(request.resource.data)

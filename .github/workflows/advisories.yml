@@ -1,0 +1,89 @@
+name: Dependency advisories
+
+# Weekly, and on demand. Deliberately **not** on push or pull request.
+#
+# This repository pins deliberately — "verified working, do not upgrade
+# casually" is a standing rule, and Expo's dependency tree carries dozens of
+# transitive advisories that cannot be resolved without breaking the SDK. A gate
+# that blocked a pull request on `npm audit` would therefore block every pull
+# request, and the only available fix would be to delete the gate.
+#
+# So this reports rather than blocks. The value is knowing when the set of known
+# advisories *changes* — a new high-severity finding in a direct dependency is
+# worth a decision; the standing ~46 transitive dev-tooling findings are not.
+on:
+  schedule:
+    # 07:00 UTC on Mondays. Early enough to be waiting at the start of the week,
+    # and not on the hour boundary where GitHub's scheduler is most congested.
+    - cron: '17 7 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # Kept in step with .github/workflows/ci.yml — see the comment there.
+  NODE_VERSION: '24.15.0'
+
+jobs:
+  npm:
+    name: npm advisories
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # `|| true` because this job reports. The exit code of `npm audit` is a
+      # count of findings, and a non-zero count is the expected steady state
+      # here — see the note at the top of this file.
+      - name: Audit (all severities, summary)
+        run: npm audit || true
+
+      # The part worth reading. `--audit-level=high` narrows to findings that
+      # would actually justify acting, and `--omit=dev` drops the transitive
+      # build tooling that makes the full report unreadable. A finding that
+      # survives both filters is in code that ships.
+      - name: Audit (high and above, production dependencies only)
+        run: |
+          echo '## npm advisories — high+, production dependencies' >> "$GITHUB_STEP_SUMMARY"
+          echo '' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          npm audit --audit-level=high --omit=dev 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+  python:
+    name: Python advisories
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: services/analytics/uv.lock
+
+      # `pip-audit` reads the resolved environment rather than the lockfile, so
+      # the sync has to happen first and has to be `--locked` — auditing a set of
+      # versions that differs from the one CI tests would report on software
+      # nobody runs.
+      - name: Install
+        working-directory: services/analytics
+        run: uv sync --locked
+
+      - name: Audit
+        working-directory: services/analytics
+        run: |
+          echo '## Python advisories' >> "$GITHUB_STEP_SUMMARY"
+          echo '' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          uvx pip-audit 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"

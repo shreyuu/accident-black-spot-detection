@@ -33,9 +33,10 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "scan:secrets": "node scripts/scanSecrets.mjs",
-    "test:scripts": "node --test \"scripts/**/*.test.mjs\" && node scripts/checkWorkflowParity.mjs",
+    "test:scripts": "node --test \"scripts/**/*.test.mjs\" && node scripts/checkWorkflowParity.mjs && node scripts/checkNativeBuildOutput.mjs",
     "verify": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run test:scripts && npm run scan:secrets",
     "grant-role": "node firebase/scripts/grantRole.mjs",
+    "confirm-email": "node firebase/scripts/confirmEmail.mjs",
     "test:rules": "npm run test:rules --workspace @accident-black-spot-detection/firebase",
     "admin": "npm run dev --workspace @accident-black-spot-detection/admin",
     "analytics": "cd services/analytics && uv run uvicorn app.main:app --reload --port 8000",
@@ -50,10 +51,5 @@
   },
   "devDependencies": {
     "prettier": "^3.9.6"
-  },
-  "dependencies": {
-    "expo": "~57.0.7",
-    "react": "19.2.3",
-    "react-native": "0.86.0"
   }
 }

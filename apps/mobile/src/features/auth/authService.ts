@@ -1,6 +1,7 @@
 import {
   createUserWithEmailAndPassword,
   onAuthStateChanged,
+  sendEmailVerification,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signOut,
@@ -82,10 +83,73 @@ export async function register(values: RegisterValues): Promise<RegisterResult> 
     logger.error('authService', 'Account created but the profile write failed', error, {
       userId: user.uid,
     });
+    await requestEmailVerification(user);
     return { user, profileWriteFailed: true };
   }
 
+  await requestEmailVerification(user);
   return { user, profileWriteFailed: false };
+}
+
+/**
+ * Ask Firebase to send the address-confirmation email.
+ *
+ * Best-effort, and deliberately so. Registration must not fail because a
+ * verification email could not be sent: the account exists, the user is signed
+ * in, and every part of the app except filing a report works without this. The
+ * report screen offers a resend for the case where it never arrives.
+ *
+ * `email_verified` gates report creation in `firestore.rules` — see
+ * `hasVerifiedEmail()` there for why that line is drawn where it is.
+ *
+ * Against the Auth emulator nothing is actually delivered; the link is printed
+ * to the emulator log and listed in the Emulator UI. See `docs/demo.md`.
+ */
+export async function requestEmailVerification(user: User): Promise<void> {
+  try {
+    await sendEmailVerification(user);
+  } catch (error) {
+    // Rate limiting is the expected failure here — Firebase refuses repeated
+    // sends to the same address in quick succession, which is correct
+    // behaviour and not something to surface as an error.
+    logger.warn('authService', 'Could not send the verification email', {
+      userId: user.uid,
+      error: error instanceof Error ? error.message : 'unknown',
+    });
+  }
+}
+
+/**
+ * Re-read the account and refresh the ID token.
+ *
+ * **The non-obvious part of this whole feature.** Clicking the verification link
+ * changes the account on Firebase's side, but the app is holding an ID token
+ * minted *before* that happened — and `email_verified` is a claim inside that
+ * token, which is what the security rules read. Without a forced refresh the
+ * user verifies, returns to the app, and is still refused, with no way to tell
+ * why. `reload()` updates `user.emailVerified` locally; `getIdToken(true)` is
+ * what makes the rules agree.
+ *
+ * @returns Whether the address is now confirmed.
+ */
+export async function refreshEmailVerification(): Promise<boolean> {
+  const user = getFirebaseAuth().currentUser;
+  if (user === null) {
+    return false;
+  }
+
+  try {
+    await user.reload();
+    // Order matters: reload first so the refreshed token carries the new claim.
+    await user.getIdToken(true);
+    return user.emailVerified;
+  } catch (error) {
+    logger.warn('authService', 'Could not refresh the verification state', {
+      userId: user.uid,
+      error: error instanceof Error ? error.message : 'unknown',
+    });
+    return user.emailVerified;
+  }
 }
 
 export async function login(values: LoginValues): Promise<User> {

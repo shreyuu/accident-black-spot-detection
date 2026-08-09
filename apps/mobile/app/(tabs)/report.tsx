@@ -18,6 +18,7 @@ import {
 import { useAuth } from '@/features/auth/AuthProvider';
 import { LocationPermissionGate } from '@/features/location/LocationPermissionGate';
 import { useLocation } from '@/features/location/useLocation';
+import { EmailVerificationGate } from '@/features/reports/EmailVerificationGate';
 import { ReportLocationPicker } from '@/features/reports/ReportLocationPicker';
 import { ReportOccurredAtField } from '@/features/reports/ReportOccurredAtField';
 import { ReportPhotoPicker } from '@/features/reports/ReportPhotoPicker';
@@ -61,6 +62,18 @@ import type { Coordinates } from '@/utils/geo';
 export default function ReportScreen() {
   const theme = useTheme();
   const { user } = useAuth();
+
+  /**
+   * Set once the gate confirms the address, so the form appears without waiting
+   * for `user` to be replaced.
+   *
+   * `user.emailVerified` is a property of a Firebase `User` object that
+   * `refreshEmailVerification` mutates in place; it does not re-run
+   * `onAuthStateChanged`, so nothing would re-render on its own. Holding the
+   * answer here is the alternative to writing derived state from an effect,
+   * which the React Compiler rules reject.
+   */
+  const [verifiedInSession, setVerifiedInSession] = useState(false);
 
   const {
     permission,
@@ -113,6 +126,26 @@ export default function ReportScreen() {
           error={new Error('No session')}
           title="You need to be signed in to report an incident"
         />
+      </ScreenContainer>
+    );
+  }
+
+  /*
+    The rules refuse a report from an unverified account — see
+    `hasVerifiedEmail()` in firestore.rules. Checked here so the refusal arrives
+    before the user writes a description and uploads a photograph, not after.
+    This is a courtesy, not the enforcement point.
+  */
+  if (!user.emailVerified && !verifiedInSession) {
+    return (
+      <ScreenContainer scrollable testID="report-screen">
+        <View style={{ gap: theme.spacing.lg }}>
+          <AppText variant="titleLarge">Report an incident</AppText>
+          <EmailVerificationGate
+            onVerified={() => setVerifiedInSession(true)}
+            testID="email-verification-gate"
+          />
+        </View>
       </ScreenContainer>
     );
   }
