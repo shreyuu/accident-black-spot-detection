@@ -65,13 +65,25 @@ module.exports = {
    * the same commit. Never lower one to make a change pass — that is the
    * failure this exists to catch.
    *
-   * ## The `global` entry
+   * ## The `global` entry, and the trap in it
    *
    * Jest removes path-matched files from the global pool, so `global` here
-   * covers *everything else*: screens, hooks, components, repositories. Measured
-   * at 41.8% lines / 33.3% functions with the pinned files excluded; set a few
-   * points under that so an ordinary refactor does not trip it. It is a floor
-   * against collapse, not a target.
+   * covers *everything else*: screens, hooks, components, repositories.
+   *
+   * Which means **pinning a well-covered file lowers the global number**, and
+   * the effect is not small. The pinned list is almost entirely 100% modules, so
+   * every addition takes coverage out of the pool and drags the residual down —
+   * adding `zoneStateStore` and `zoneStatePersistence` alone moved it from 41.8%
+   * to 39.8% and broke a floor that had been passing. The headline figure Jest
+   * prints (~48%) is the *whole* repository and is never the right number to put
+   * here.
+   *
+   * So: when adding a path threshold, recompute this from the summary with all
+   * pinned files excluded, and leave a couple of points of slack. Lowering it
+   * for that reason is expected and is not the ratchet being defeated —
+   * lowering it because a *file* got worse is.
+   *
+   * Currently 39.8% lines / 31.8% functions with the pinned files excluded.
    */
   coverageThreshold: {
     // The proximity engine decides whether a warning fires at all: hysteresis,
@@ -87,6 +99,25 @@ module.exports = {
     // Decides whether background monitoring may run at all, given permission
     // state and the user's opt-in.
     './src/features/alerts/backgroundMonitoringPolicy.ts': {
+      statements: 100,
+      lines: 100,
+      functions: 100,
+      branches: 100,
+    },
+
+    // Zone state on disk. `zoneStatePersistence.ts` decides what may be trusted;
+    // this is the AsyncStorage wrapper around it, and the pair is what stops a
+    // relaunch either repeating a warning or swallowing one. Two of its
+    // behaviours look like housekeeping and are not: removing the record rather
+    // than writing an empty one is a privacy decision, and never throwing is
+    // what the headless background task depends on.
+    './src/features/alerts/zoneStatePersistence.ts': {
+      statements: 100,
+      lines: 100,
+      functions: 100,
+      branches: 95,
+    },
+    './src/features/alerts/zoneStateStore.ts': {
       statements: 100,
       lines: 100,
       functions: 100,
@@ -172,10 +203,10 @@ module.exports = {
     },
 
     global: {
-      statements: 40,
-      lines: 40,
-      functions: 31,
-      branches: 40,
+      statements: 37,
+      lines: 37,
+      functions: 29,
+      branches: 37,
     },
   },
 };
