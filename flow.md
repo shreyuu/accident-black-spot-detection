@@ -536,6 +536,65 @@ npm run analytics:verify  293 tests   ruff + mypy + pytest, no emulator
 
 ---
 
+## Repository intelligence tooling
+
+Not a runtime flow — this is how an agent's view of the codebase is produced and
+kept current. Configured in `DEC-008`; the rules for using it are in
+[`AGENTS.md`](AGENTS.md).
+
+```
+source tree
+     │
+     ├──> graphify extract . --code-only       tree-sitter AST, 317 code files
+     │         ↓                               no API key, no network
+     │    graphify-out/graph.json              2389 nodes, 5547 edges
+     │         ↓
+     │    graphify cluster-only .              communities + report + viz
+     │         ↓
+     │    graphify-out/GRAPH_REPORT.md
+     │    graphify-out/graph.html
+     │         ↓
+     │    graphify query | explain | path | affected | god-nodes
+     │
+     └──> serena project index .               typescript LS: 268 files
+               ↓                               python LS (pyright):  31 files
+          .serena/cache/{typescript,python}
+               ↓
+          find_symbol · get_symbols_overview · find_referencing_symbols
+```
+
+Neither directory is tracked — see the table in `DEC-008`. A fresh clone
+bootstraps with:
+
+```bash
+uv tool install graphifyy && uv tool install -p 3.13 serena-agent
+graphify extract . --code-only && graphify cluster-only .
+serena init && serena project index .
+```
+
+**Refresh trigger.** After a structural change — new module, moved file, renamed
+or deleted symbol, changed imports — run `graphify update .` (AST-only, free;
+add `--force` when the change _deleted_ code, or the shrink guard refuses to
+overwrite a larger graph). Serena re-reads changed files on its own and only
+needs `serena project index .` after a large restructuring.
+
+**Where the two agree, and where they do not.** Both were cross-checked against
+source on the analytics path. Graphify reports
+`run_pipeline() --calls--> _candidate_for() --calls--> BlackSpotCandidate`;
+Serena resolves `run_pipeline` to `pipeline.py:135-188` and finds 30 references
+including `analyse` in `api/routes.py`. Both name `_patterns_for` as the caller
+of `eclat`, which `pipeline.py:90` confirms. The difference is in kind:
+Graphify's edges come from tree-sitter and are syntactic, Serena's come from the
+language servers and are resolved. **Source code is the authority when they
+disagree.**
+
+**One known gap.** `GRAPH_REPORT.md`'s community names are `Community N`
+placeholders — naming them calls an LLM, and no `ANTHROPIC_API_KEY` was set when
+the graph was built. Nodes and edges are unaffected. `graphify label .` fills
+them in once a key is available.
+
+---
+
 ## Current Modification Context
 
 ### Task
