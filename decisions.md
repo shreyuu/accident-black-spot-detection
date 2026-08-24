@@ -612,3 +612,144 @@ not do", and is linked from the README intro rather than buried at line 795.
 ### Revisit When
 
 The README drifts back over roughly 300 lines.
+
+---
+
+## DEC-008 — Adopt Graphify and Serena as external agent tooling, and keep their output out of the repository
+
+**Date:** 2026-08-24
+**Status:** Active
+**Affected Areas:** `AGENTS.md` (new), `CLAUDE.md` (new), `.claude/settings.json`
+(new), `.claude/skills/graphify/` (new), `.serena/project.yml` (new),
+`.gitignore`, `.prettierignore`, `graphify-out/` (generated, untracked)
+
+### Context
+
+AI agents working on this repository were re-deriving its structure from scratch
+on every session: four deployables, a shared package, a 43 KB rules file, and
+two languages that never meet in the same call stack. `flow.md` and
+`decisions.md` already carried the _how_ and the _why_, but nothing gave an
+agent a mechanical way to answer "what calls this" or "what breaks if I change
+this" without reading large parts of the tree.
+
+Two tools address different halves of that problem. **Graphify** builds a
+tree-sitter knowledge graph of the whole repository — cheap, language-agnostic,
+syntactic. **Serena** runs the real TypeScript and Python language servers over
+the project and answers definition, reference and caller questions semantically.
+Neither subsumes the other: Graphify sees `services/analytics` and
+`apps/mobile` in one graph but cannot resolve a type; Serena resolves precisely
+but only within a language server's world.
+
+### Decision
+
+Install both as **external developer tools** via `uv tool install`
+(`graphifyy` → `graphify` 0.9.48; `serena-agent` 1.7.0), never as project
+dependencies. Configure Graphify project-scoped for Claude Code
+(`graphify install --project --platform claude`) and register Serena's MCP
+server with `--context=claude-code --project-from-cwd`. Configure
+`.serena/project.yml` for `typescript` and `python` only. Write `AGENTS.md` as
+the authoritative agent instruction set.
+
+Track the **configuration**; ignore the **output**:
+
+| Path                                                | Tracked | Why                                  |
+| --------------------------------------------------- | ------- | ------------------------------------ |
+| `AGENTS.md`, `CLAUDE.md`                            | yes     | instructions, hand-written, small    |
+| `.claude/settings.json`, `.claude/skills/graphify/` | yes     | project config every agent needs     |
+| `.claude/settings.local.json`                       | no      | per-machine permissions              |
+| `.serena/project.yml`                               | yes     | the project's language configuration |
+| `.serena/cache/`, `logs/`, `project.local.yml`      | no      | ~10 MB machine-local LSP cache       |
+| `graphify-out/`                                     | no      | ~6 MB of regenerable machine output  |
+
+### Reasoning
+
+Installing either tool into `services/analytics` would contradict the lean
+dependency stance `pyproject.toml` argues for in its own comment, and would put
+a developer tool in the deployment closure of a service. `uv tool install` gives
+each its own isolated environment on `~/.local/bin`, which is already on `PATH`,
+so no shell configuration changed.
+
+Excluding `graphify-out/` is the same argument as `DEC-001`: generated output is
+regenerated, never committed. It is rewritten wholesale by every
+`graphify update .`, so tracking it puts a multi-megabyte diff of machine output
+on every commit that touches code. It rebuilds offline, with no API key, in
+about fifteen seconds — the cost of not having it in a fresh clone is one
+documented command.
+
+The `.prettierignore` entries are not tidiness. `prettier --check .` walks the
+working tree rather than the index, so a gitignored `graphify-out/` still failed
+`npm run format:check` — the first step of `npm run verify` — on 50 files of
+generated JSON. This was observed, not predicted: the gate was run before and
+after the graph was built.
+
+Only `typescript` and `python` are configured for Serena because they are the
+only languages actually written here. The Swift and Kotlin under
+`apps/mobile/ios|android` is `expo prebuild` output, untracked by `DEC-001`, and
+indexing it would put generated code into an agent's semantic view of the
+project.
+
+### Alternatives Considered
+
+#### Commit `graphify-out/`
+
+A fresh clone would get instant architectural context, and Graphify ships a git
+merge driver precisely because some projects do this. Rejected on size and
+churn: 3.2 MB of `graph.json` plus 2.5 MB of `graph.html` regenerated on every
+structural change, in a repository whose largest hand-written file is 43 KB.
+
+#### Commit `GRAPH_REPORT.md` alone
+
+Tempting — 29 KB, human-readable, no HTML. Rejected because it is derived from
+`graph.json` and would silently go stale against a graph nobody can see, which
+is worse than having neither. It also currently contains `Community N`
+placeholders rather than real names.
+
+#### Global rather than project-scoped Graphify install
+
+Simpler, one configuration for every repository. Rejected: the skill and the
+`PreToolUse` hooks describe _this_ project's graph, and pointing unrelated
+repositories at them is noise at best.
+
+#### Serena inside `services/analytics/.venv`
+
+Rejected outright. It would make a developer tool a dependency of a deployed
+service and force its transitive tree — language servers included — onto the
+analytics resolution graph.
+
+#### Configure Serena for Swift and Kotlin too
+
+Rejected. Those files are generated build output, gitignored under `DEC-001`,
+and `ignore_all_files_in_gitignore: true` already keeps them out. Adding the
+language servers would only slow indexing and surface symbols nobody edits.
+
+### Trade-offs
+
+**Gained:** an agent can answer architectural questions with
+`graphify affected "run_pipeline()"` instead of reading `services/analytics`
+end to end, and can resolve exact callers across 268 TypeScript and 31 Python
+files without opening a file. `AGENTS.md` makes the workflow repeatable rather
+than re-negotiated each session.
+
+**Given up:** two more tools a contributor must install before the documented
+agent workflow works — mitigated by both being one `uv tool install` and by
+neither being required to build, test, or run anything. A fresh clone has no
+graph until `graphify extract . --code-only` is run. And the graph is
+tree-sitter-derived, so its edges are syntactic: it is a map, and the source
+remains the authority.
+
+### Consequences
+
+- `npm run verify` and `npm run scan:secrets` were re-run after the change and
+  pass. `scan:secrets` reports 382 tracked text files scanned, no secrets.
+- `.prettierignore`'s comment about `.claude/` being untracked was amended; it is
+  now partly tracked and the comment said otherwise.
+- No application code, dependency, or behaviour changed.
+
+### Revisit When
+
+- The repository gains a language that is actually written here rather than
+  generated — add it to `.serena/project.yml` then, and not before.
+- `graphify-out/` gains an artifact that is small, stable, and genuinely useful
+  to a fresh clone. Revisit tracking that one file rather than the directory.
+- CI would benefit from a built graph. That is an artifact-cache problem, not a
+  version-control one.

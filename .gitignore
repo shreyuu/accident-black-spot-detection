@@ -104,3 +104,27 @@ firebase-debug.log
 firestore-debug.log
 ui-debug.log
 storage-debug.log
+
+# Repository intelligence tooling (Graphify + Serena). See DEC-008.
+#
+# graphify-out/ is ~6 MB of machine output — graph.json, graph.html, the AST
+# cache — rewritten wholesale by every `graphify update .`. It is regenerable
+# offline with no API key in about fifteen seconds, so tracking it would buy a
+# faster first clone at the price of a multi-megabyte diff on every commit.
+# Same principle as DEC-001: generated output is regenerated, never committed.
+# Bootstrap for a fresh clone is in AGENTS.md § Graphify.
+graphify-out/
+
+# Serena's LSP symbol cache (~10 MB), its logs, and any machine-local project
+# override. `.serena/project.yml` IS tracked — it is the project's language
+# configuration, not a cache. `.serena/.gitignore`, written by Serena itself,
+# already covers cache/ and project.local.yml; logs/ is added here so the rule
+# survives Serena rewriting that file.
+.serena/logs/
+.serena/cache/
+.serena/project.local.yml
+
+# Per-machine Claude Code permissions. `.claude/settings.json` (the Graphify
+# PreToolUse hooks) and `.claude/skills/` ARE tracked — they are project
+# configuration every agent needs.
+.claude/settings.local.json
