@@ -520,7 +520,8 @@ npm run verify        no emulator, ~1 min
                                       │         │
                                       │         ├── node --test scripts/**/*.test.mjs
                                       │         ├── checkWorkflowParity.mjs
-                                      │         └── checkNativeBuildOutput.mjs   ← DEC-001
+                                      │         ├── checkNativeBuildOutput.mjs   ← DEC-001
+                                      │         └── checkCollectionLiterals.mjs  ← DEC-009
                                       └── jest --coverage, per-path floors       ← DEC-004
 
 npm run test:rules        156 tests   Firestore + Storage emulators
@@ -533,6 +534,15 @@ npm run analytics:verify  293 tests   ruff + mypy + pytest, no emulator
 
 `checkWorkflowParity.mjs` fails if `ci.yml` stops running any step `verify` runs
 — the two are written in different files and nothing else notices drift.
+
+`checkCollectionLiterals.mjs` fails if `apps/mobile/src` names a Firestore
+collection as a string literal rather than deriving it from `COLLECTIONS`. Mobile
+is the only deployable `firestore.rules` constrains, so a stale path there fails
+as a `PERMISSION_DENIED` on a device rather than at the call site — `DEC-009`.
+
+`npm run report:exports` is **not** a gate. It lists exports no other file
+imports, and never fails a build; see the header of
+`scripts/reportUnusedExports.mjs` for why that is deliberate.
 
 ---
 
@@ -730,14 +740,25 @@ No dependencies added or removed. Three were **removed** from the workspace root
 - `DEC-005` — `runOrphanSweep` extraction
 - `DEC-006` — weekly advisory reporting
 - `DEC-007` — README reduction
+- `DEC-008` — Graphify and Serena as external agent tooling
+- `DEC-009` — mobile derives collection paths from `COLLECTIONS`, and the gate
 
 ### Verified state at time of writing
 
 ```
 format:check · lint · typecheck · scan:secrets   pass
 npm run test                966 tests, 45 suites  pass
-npm run test:scripts         46 tests             pass
-npm run test:rules          156 tests             pass
-npm run test:functions       13 tests             pass
-npm run analytics:verify    293 tests             pass
+npm run test:scripts         79 tests             pass
+npm run test:rules          158 tests             see note
+npm run test:functions       13 tests             not re-run
+npm run analytics:verify    293 tests             not re-run
 ```
+
+`test:rules` gained two assertions in `DEC-009` (`coverage.test.mjs`, holding
+`firestore.rules` to `MODERATION_ONLY_FIELDS` and `CLIENT_CREATABLE_STATUS`).
+That file reads the rules as text and needs no emulator; it was run directly and
+passes 8/8, and both new assertions were checked against a deliberately broken
+rules file. The other 150 in that suite, and the two suites below it, were **not
+re-run** at that time — the Firestore emulator JAR could not be downloaded in
+that environment, and the analytics service needs `uv`. Nothing in `DEC-009`
+touches Python or the emulator-backed paths.

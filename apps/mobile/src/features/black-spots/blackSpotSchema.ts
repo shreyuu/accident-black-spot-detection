@@ -44,6 +44,4 @@ export const blackSpotSchema = z.object({
   createdBy: z.string().min(1),
 });
 
-export type BlackSpotDocument = z.infer<typeof blackSpotSchema>;
-
 export const BLACK_SPOT_RADIUS_BOUNDS_M = { min: RADIUS_MIN_M, max: RADIUS_MAX_M } as const;

@@ -33,34 +33,16 @@
 
 import { geohashForLocation } from 'geofire-common';
 
-const PROJECT_ID = 'demo-accident-black-spot-detection';
-const FIRESTORE_HOST = process.env.FIRESTORE_EMULATOR_HOST ?? 'localhost:8080';
+import { writeDocument } from './lib/firestoreRest.mjs';
+import { destination } from './lib/geo.mjs';
+import { resolveSeedTarget } from './lib/seedTarget.mjs';
 
-const centreLat = Number.parseFloat(process.argv[2] ?? '51.5074');
-const centreLon = Number.parseFloat(process.argv[3] ?? '-0.1278');
-
-if (!Number.isFinite(centreLat) || !Number.isFinite(centreLon)) {
-  console.error('Usage: node firebase/seed/seedBlackSpots.mjs [latitude] [longitude]');
-  process.exit(1);
-}
-
-const EARTH_RADIUS_M = 6_371_008.8;
-const toRad = (d) => (d * Math.PI) / 180;
-const toDeg = (r) => (r * 180) / Math.PI;
-
-/** Project a point `distanceM` from an origin along `bearingDeg`. */
-function destination(lat, lon, bearingDeg, distanceM) {
-  const ad = distanceM / EARTH_RADIUS_M;
-  const br = toRad(bearingDeg);
-  const la = toRad(lat);
-  const lo = toRad(lon);
-  const sinLat = Math.sin(la) * Math.cos(ad) + Math.cos(la) * Math.sin(ad) * Math.cos(br);
-  const destLat = Math.asin(sinLat);
-  const destLon =
-    lo +
-    Math.atan2(Math.sin(br) * Math.sin(ad) * Math.cos(la), Math.cos(ad) - Math.sin(la) * sinLat);
-  return { latitude: toDeg(destLat), longitude: ((toDeg(destLon) + 540) % 360) - 180 };
-}
+const {
+  host: FIRESTORE_HOST,
+  projectId: PROJECT_ID,
+  centreLat,
+  centreLon,
+} = resolveSeedTarget('firebase/seed/seedBlackSpots.mjs');
 
 /**
  * `bearing` / `offsetM` place each spot relative to the seed centre, so the
@@ -292,22 +274,6 @@ const TEMPLATES = [
   },
 ];
 
-/** Convert a plain JS value into Firestore REST `Value` form. */
-function toFirestoreValue(value) {
-  if (typeof value === 'string') return { stringValue: value };
-  if (typeof value === 'boolean') return { booleanValue: value };
-  if (typeof value === 'number') {
-    return Number.isInteger(value) ? { integerValue: String(value) } : { doubleValue: value };
-  }
-  throw new Error(`Unsupported seed value: ${String(value)}`);
-}
-
-function toFirestoreFields(document) {
-  return Object.fromEntries(
-    Object.entries(document).map(([key, value]) => [key, toFirestoreValue(value)]),
-  );
-}
-
 async function writeSpot(template) {
   const { latitude, longitude } = destination(
     centreLat,
@@ -337,22 +303,13 @@ async function writeSpot(template) {
     createdBy: 'seed-script',
   };
 
-  // PATCH rather than POST so the script is idempotent: re-running it around a
-  // different centre repositions the existing documents instead of failing with
-  // "already exists", which matters because the seed centre has to follow
-  // whatever location the simulator or device is reporting.
-  const url = `http://${FIRESTORE_HOST}/v1/projects/${PROJECT_ID}/databases/(default)/documents/blackSpots/${template.id}`;
-
-  const response = await fetch(url, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer owner' },
-    body: JSON.stringify({ fields: toFirestoreFields(document) }),
+  await writeDocument({
+    host: FIRESTORE_HOST,
+    projectId: PROJECT_ID,
+    collection: 'blackSpots',
+    id: template.id,
+    document,
   });
-
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`Failed to write ${template.id}: ${response.status} ${body}`);
-  }
 
   const visibility = template.verified && template.active ? 'visible' : 'HIDDEN (expected)';
   console.log(`  + ${template.id.padEnd(28)} ${template.riskLevel.padEnd(8)} ${visibility}`);

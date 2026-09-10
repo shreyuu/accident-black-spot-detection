@@ -12,6 +12,8 @@ import {
   type Timestamp,
 } from 'firebase/firestore';
 
+import { COLLECTIONS } from '@accident-black-spot-detection/shared-types';
+
 import { blackSpotSchema } from '@/features/black-spots/blackSpotSchema';
 import { getFirebaseFirestore } from '@/services/firebase/app';
 import type { BlackSpot, NearbyBlackSpot } from '@/types/domain';
@@ -45,7 +47,7 @@ import { logger } from '@/utils/logger';
  * impossible for a client to request unverified data at all.
  */
 
-export const BLACK_SPOTS_COLLECTION = 'blackSpots';
+export const BLACK_SPOTS_COLLECTION = COLLECTIONS.blackSpots;
 
 /**
  * How far around the user to fetch, in metres.

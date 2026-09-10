@@ -753,3 +753,164 @@ remains the authority.
   to a fresh clone. Revisit tracking that one file rather than the directory.
 - CI would benefit from a built graph. That is an artifact-cache problem, not a
   version-control one.
+
+---
+
+## DEC-009 — Close the mobile end of the collection-name contract, and gate it
+
+**Date:** 2026-09-10
+**Status:** Active
+**Affected Areas:** `apps/admin/src/lib/session.ts`,
+`apps/mobile/src/features/{alerts,black-spots,emergency-contacts,reports}/`,
+`apps/mobile/src/services/firebase/userProfileRepository.ts`,
+`firebase/seed/lib/` (new), `firebase/seed/seedBlackSpots.mjs`,
+`firebase/seed/seedIncidentReports.mjs`, `firebase/tests/coverage.test.mjs`,
+`scripts/collectionLiterals.mjs` (new), `scripts/checkCollectionLiterals.mjs`
+(new), `package.json`
+
+### Context
+
+A maintainability review looked for the usual cleanup targets and did not find
+them: no orphaned files, no unused UI components, no dead Python, no committed
+build artifacts, one live `TODO`. What it did find was narrower and worse.
+
+`COLLECTIONS` in `packages/shared-types/src/vocabulary.ts` calls itself the
+"single source of truth for collection paths across both apps and the rules",
+and `firebase/tests/coverage.test.mjs` holds it to `firestore.rules`.
+`apps/admin` imports it. `functions/src/collections.ts` keeps a **checked** copy,
+with its own reasoning and `__tests__/collections.test.ts` asserting the two
+agree. `apps/mobile` did neither — it spelled all seven paths out as string
+literals and never imported `COLLECTIONS` at all.
+
+That is the dangerous corner of the asymmetry this repository is built around.
+Mobile is the only deployable `firestore.rules` constrains, so a rename that
+updates `COLLECTIONS` and the rules together passes every existing gate, ships,
+and leaves the client on a path the rules no longer match — where the catch-all
+denies it, silently, as a `PERMISSION_DENIED` naming no rule.
+
+Two smaller things surfaced alongside it. `getActor` runs
+`verifySessionCookie(token, true)`, a network round trip whose `checkRevoked`
+flag is the whole point of it — and the dashboard paid for it twice per view,
+once in the group layout and once in the page. And both seed scripts carried
+byte-identical copies of the same geometry and REST plumbing, whose two
+`toFirestoreFields` had already diverged: the black-spots copy threw
+`Unsupported seed value` on a `Date`, an array or a `null`, all of which the
+other wrote correctly.
+
+### Decision
+
+Mobile derives every collection path from `COLLECTIONS`. A new
+`scripts/checkCollectionLiterals.mjs`, wired into `test:scripts` and therefore
+into `verify`, fails if `apps/mobile/src` ever writes one as a literal again.
+
+`getActor` is wrapped in React's `cache`. Both call sites stay.
+
+The seed scripts share `firebase/seed/lib/{geo,firestoreRest,seedTarget}.mjs`,
+adopting the **superset** codec so nothing lost capability.
+
+`coverage.test.mjs` gains two assertions holding `firestore.rules` to
+`MODERATION_ONLY_FIELDS` and `CLIENT_CREATABLE_STATUS`.
+
+### Reasoning
+
+The gate matters more than the fix. Seven literals corrected by hand are seven
+literals somebody re-adds; a check that runs inside `verify` is the same
+mechanism `checkWorkflowParity.mjs` and `collections.test.ts` already use to
+keep a copy honest, and it is why the `functions` copy is safe while the mobile
+one was not.
+
+`cache` memoises **per request**, which is the only memoisation a revocation
+check tolerates: the second caller in one render reuses the first result, the
+next request starts cold and re-checks. A module-level cache would keep a
+demoted operator working — the exact failure `checkRevoked` exists to prevent —
+so the fix had to be this one and not a cheaper-looking one.
+
+The two rules assertions were written because the audit that considered deleting
+`CLIENT_CREATABLE_STATUS` and `MODERATION_ONLY_FIELDS` found the opposite
+problem. Both looked like dead weight — no TypeScript referenced the first at
+all — but both mirror a value the rules hard-code, and
+`MODERATION_ONLY_FIELDS` explicitly claims the rules "derive their behaviour
+from one list instead of three hand-maintained copies" when in fact the rules
+spell the list out. Documentation nothing verifies is a comment with a version
+number. Asserting it is what makes keeping the constants correct.
+
+### Alternatives Considered
+
+#### Flag any string equal to a collection name
+
+The first version of the check did this and produced four findings, all false.
+React Query cache keys (`queryKey: ['blackSpots', …]`) are client-local
+identifiers that must **not** track a server-side rename; `REPORT_IMAGES_PREFIX`
+is a Cloud Storage path governed by `storage.rules`; and user-facing copy names
+concepts. The check now matches on _position_ — a literal handed to
+`collection`/`collectionGroup`/`doc`, or assigned to a `*_COLLECTION` constant.
+A noisy gate gets suppressed rather than obeyed.
+
+#### Have mobile keep a checked copy, as `functions` does
+
+Rejected. `functions` copies for a real reason — it runs compiled JavaScript on
+a runtime that cannot strip types, so importing TypeScript source would fail at
+load in production and nowhere else. Mobile has no such constraint: Metro
+already resolves the package, and `apps/mobile/src/types/domain.ts` has imported
+from it all along. A copy here would be ceremony without the cause.
+
+#### Delete the unreferenced `shared-types` constants
+
+Rejected for `CLIENT_CREATABLE_STATUS`, `MODERATION_ONLY_FIELDS`,
+`CollectionName` and `AdminAuditLogEntry` — see the reasoning above. Unused _by
+TypeScript_ is weak evidence in a package whose consumers include `.mjs` rules
+tests that cannot import a type at all.
+
+#### Remove the "unused" dependencies
+
+Rejected. `expo-dev-client`, `expo-system-ui`, `expo-linking`,
+`react-native-screens` and `react-native-reanimated` are autolinked native
+modules or `expo-router` peers, never imported by name. This is the standard
+`depcheck` failure mode on an Expo monorepo, and acting on it would break the
+build for a cosmetic gain.
+
+#### Fix the 146 over-exported symbols in one pass
+
+Rejected for now. Roughly 110 are local `Props` types exported without a
+consumer. Correcting them is right but touches 90 files, and a mechanical diff
+that size buries the changes above in review. Left to be done per feature.
+
+### Trade-offs
+
+**Gained:** a rename of any collection now fails `verify` unless mobile follows,
+rather than failing on a device. The dashboard makes one revocation round trip
+per view instead of two. Seed geometry and the REST codec have one definition,
+and the merged codec no longer throws on values the other script always
+supported. Two more invariants in `firestore.rules` are checked rather than
+asserted in prose.
+
+**Given up:** mobile repositories now import `shared-types`, which was
+previously reached only from `types/domain.ts` — a slightly wider Metro
+resolution surface, mitigated by the package having no runtime dependencies at
+all, which is what already lets the rules tests import it. And
+`checkCollectionLiterals.mjs` is a text-matching check, not a type-level one; it
+can be defeated by building a path from a variable. It catches the mistake
+people actually make, not every mistake possible.
+
+### Consequences
+
+- `apps/mobile/src` holds no collection-name literals; the gate reports all 11
+  paths derived from `COLLECTIONS`.
+- Dead code removed: `getCurrentUser`, `__resetAlertDeliveryForTests`,
+  `__resetFirebaseForTests`, and six unreferenced type aliases. The two
+  `__reset*ForTests` helpers had no test using them; `__envSchemaForTests`, which
+  does, is untouched.
+- `destination()` was verified bit-identical to the implementation it replaced
+  across 120 origin/bearing/distance cases, and the merged codec byte-identical
+  on a real black-spot document.
+- Both new gates were negative-tested: each fails on the regression it exists to
+  catch, at the right line, and passes once reverted.
+
+### Revisit When
+
+- A collection path has to be built dynamically. The check would need to become
+  type-level, or gain the allow-list idiom `scanSecrets.mjs` already uses.
+- `shared-types` gains a build step. `functions/src/collections.ts` stops needing
+  to be a copy at that point, and `DEC-009`'s asymmetry argument weakens.
+- The `Props`-export cleanup is picked up. If it lands as a lint rule rather than
+  by hand, that is its own decision.

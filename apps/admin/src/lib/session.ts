@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { cookies } from 'next/headers';
+import { cache } from 'react';
 
 import {
   canAccessDashboard,
@@ -77,8 +78,25 @@ export function sessionCookieOptions() {
  * account, a malformed claim — rather than distinguishing them. The caller's
  * response is the same in every case (send them to sign in), and a more specific
  * error would tell an attacker which of their guesses was closer.
+ *
+ * ## Why this is wrapped in `cache`
+ *
+ * The dashboard guard runs in the group layout, and each page then asks again
+ * for the actor's uid. Server components render the layout and the page in the
+ * same pass, so an uncached `getActor` pays `verifySessionCookie` — a network
+ * round trip to the Auth backend, because of `checkRevoked` below — twice for
+ * one page view.
+ *
+ * `cache` from React memoises **per request**, not globally, which is the only
+ * memoisation the revocation check can tolerate: the second caller in a single
+ * render reuses the first result, and the next request starts cold and
+ * re-checks. A module-level cache would keep a demoted operator working, which
+ * is the exact failure `checkRevoked` exists to prevent.
+ *
+ * Both callers therefore stay as they are. The layout's guard and the page's
+ * own lookup are deliberate defence in depth, and after this they are free.
  */
-export async function getActor(): Promise<Actor | null> {
+export const getActor = cache(async (): Promise<Actor | null> => {
   const store = await cookies();
   const token = store.get(SESSION_COOKIE)?.value;
 
@@ -99,7 +117,7 @@ export async function getActor(): Promise<Actor | null> {
   } catch {
     return null;
   }
-}
+});
 
 /**
  * The actor, but only if they may use the dashboard at all.
