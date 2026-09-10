@@ -45,60 +45,16 @@
 
 import { geohashForLocation } from 'geofire-common';
 
-const PROJECT_ID = 'demo-accident-black-spot-detection';
-const FIRESTORE_HOST = process.env.FIRESTORE_EMULATOR_HOST ?? 'localhost:8080';
+import { writeDocument } from './lib/firestoreRest.mjs';
+import { destination } from './lib/geo.mjs';
+import { resolveSeedTarget } from './lib/seedTarget.mjs';
 
-const centreLat = Number.parseFloat(process.argv[2] ?? '51.5074');
-const centreLon = Number.parseFloat(process.argv[3] ?? '-0.1278');
-
-if (!Number.isFinite(centreLat) || !Number.isFinite(centreLon)) {
-  console.error('Usage: node firebase/seed/seedIncidentReports.mjs [latitude] [longitude]');
-  process.exit(1);
-}
-
-const EARTH_RADIUS_M = 6_371_008.8;
-const toRad = (d) => (d * Math.PI) / 180;
-const toDeg = (r) => (r * 180) / Math.PI;
-
-function destination(lat, lon, bearingDeg, distanceM) {
-  const ad = distanceM / EARTH_RADIUS_M;
-  const br = toRad(bearingDeg);
-  const la = toRad(lat);
-  const lo = toRad(lon);
-  const sinLat = Math.sin(la) * Math.cos(ad) + Math.cos(la) * Math.sin(ad) * Math.cos(br);
-  const destLat = Math.asin(sinLat);
-  const destLon =
-    lo +
-    Math.atan2(Math.sin(br) * Math.sin(ad) * Math.cos(la), Math.cos(ad) - Math.sin(la) * sinLat);
-  return { latitude: toDeg(destLat), longitude: ((toDeg(destLon) + 540) % 360) - 180 };
-}
-
-/** Firestore REST wants explicitly-typed values. */
-function toFirestoreFields(object) {
-  const fields = {};
-  for (const [key, value] of Object.entries(object)) {
-    if (value === null || value === undefined) {
-      fields[key] = { nullValue: null };
-    } else if (typeof value === 'string') {
-      fields[key] = { stringValue: value };
-    } else if (typeof value === 'boolean') {
-      fields[key] = { booleanValue: value };
-    } else if (typeof value === 'number') {
-      fields[key] = Number.isInteger(value)
-        ? { integerValue: String(value) }
-        : { doubleValue: value };
-    } else if (value instanceof Date) {
-      fields[key] = { timestampValue: value.toISOString() };
-    } else if (Array.isArray(value)) {
-      fields[key] = {
-        arrayValue: { values: value.map((entry) => ({ stringValue: String(entry) })) },
-      };
-    } else {
-      throw new Error(`Unsupported field type for ${key}`);
-    }
-  }
-  return fields;
-}
+const {
+  host: FIRESTORE_HOST,
+  projectId: PROJECT_ID,
+  centreLat,
+  centreLon,
+} = resolveSeedTarget('firebase/seed/seedIncidentReports.mjs');
 
 const NOW = Date.now();
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -286,18 +242,13 @@ async function writeReport(report) {
     updatedAt: rest.occurredAt,
   };
 
-  const url = `http://${FIRESTORE_HOST}/v1/projects/${PROJECT_ID}/databases/(default)/documents/incidentReports/${id}`;
-
-  // PATCH so re-running around a different centre repositions rather than fails.
-  const response = await fetch(url, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer owner' },
-    body: JSON.stringify({ fields: toFirestoreFields(document) }),
+  await writeDocument({
+    host: FIRESTORE_HOST,
+    projectId: PROJECT_ID,
+    collection: 'incidentReports',
+    id,
+    document,
   });
-
-  if (!response.ok) {
-    throw new Error(`Failed to write ${id}: ${response.status} ${await response.text()}`);
-  }
 }
 
 console.log(`Seeding incident reports around ${centreLat}, ${centreLon}`);

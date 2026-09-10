@@ -216,9 +216,3 @@ async function triggerHaptics(hapticsEnabled: boolean): Promise<void> {
     // Many devices have no haptic motor. Nothing to report.
   }
 }
-
-/** Test-only reset of the one-shot configuration and module-load guards. */
-export function __resetAlertDeliveryForTests(): void {
-  notificationsConfigured = false;
-  notificationsModule = undefined;
-}

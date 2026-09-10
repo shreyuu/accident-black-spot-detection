@@ -71,7 +71,6 @@ export const emergencyContactFormSchema = z.object({
 });
 
 export type EmergencyContactFormValues = z.input<typeof emergencyContactFormSchema>;
-export type EmergencyContactValues = z.output<typeof emergencyContactFormSchema>;
 
 /**
  * Shape of an `emergencyContacts/{id}` document as read back.
@@ -89,5 +88,3 @@ export const emergencyContactDocumentSchema = z.object({
   relationship: z.string().max(CONTACT_RELATIONSHIP_MAX_LENGTH).optional(),
   isPrimary: z.boolean(),
 });
-
-export type EmergencyContactDocument = z.infer<typeof emergencyContactDocumentSchema>;

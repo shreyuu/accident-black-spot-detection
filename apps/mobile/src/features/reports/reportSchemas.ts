@@ -53,8 +53,6 @@ export const ALLOWED_IMAGE_MIME_TYPES = [
   'image/heif',
 ] as const;
 
-export type AllowedImageMimeType = (typeof ALLOWED_IMAGE_MIME_TYPES)[number];
-
 /**
  * How far in the past an occurrence time may be, in milliseconds.
  *
@@ -174,5 +172,3 @@ export const incidentReportDocumentSchema = z.object({
   moderationNotes: z.string().max(2000).optional(),
   reviewedBy: z.string().optional(),
 });
-
-export type IncidentReportDocument = z.infer<typeof incidentReportDocumentSchema>;

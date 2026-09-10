@@ -11,6 +11,8 @@ import {
   type WithFieldValue,
 } from 'firebase/firestore';
 
+import { COLLECTIONS } from '@accident-black-spot-detection/shared-types';
+
 import { ALERT_RADIUS_BOUNDS_M, env } from '@/config/env';
 import { getFirebaseFirestore } from '@/services/firebase/app';
 import type { UserProfile, UserProfilePreferences } from '@/types/domain';
@@ -26,7 +28,7 @@ import { logger } from '@/utils/logger';
  * means a schema change has one place to update.
  */
 
-export const USERS_COLLECTION = 'users';
+export const USERS_COLLECTION = COLLECTIONS.users;
 
 /**
  * Firestore converter with runtime validation on read.

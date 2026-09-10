@@ -298,14 +298,3 @@ function connectEmulator(service: keyof typeof EMULATOR_PORTS, connect: () => vo
     });
   }
 }
-
-/** Test-only reset of the memoised singletons. */
-export function __resetFirebaseForTests(): void {
-  cachedApp = null;
-  cachedAuth = null;
-  cachedFirestore = null;
-  cachedStorage = null;
-  emulatorsConnected.auth = false;
-  emulatorsConnected.firestore = false;
-  emulatorsConnected.storage = false;
-}

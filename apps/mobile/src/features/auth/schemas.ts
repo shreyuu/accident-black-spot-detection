@@ -108,7 +108,6 @@ export const forgotPasswordSchema = z.object({
 });
 
 export type ForgotPasswordFormValues = z.input<typeof forgotPasswordSchema>;
-export type ForgotPasswordValues = z.output<typeof forgotPasswordSchema>;
 
 // -----------------------------------------------------------------------------
 // Stored profile

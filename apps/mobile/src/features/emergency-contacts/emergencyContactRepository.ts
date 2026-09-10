@@ -15,6 +15,8 @@ import {
   type Timestamp,
 } from 'firebase/firestore';
 
+import { COLLECTIONS } from '@accident-black-spot-detection/shared-types';
+
 import {
   emergencyContactDocumentSchema,
   MAX_EMERGENCY_CONTACTS,
@@ -37,7 +39,7 @@ import { logger } from '@/utils/logger';
  * which in an emergency is the difference between reaching someone and not.
  */
 
-export const EMERGENCY_CONTACTS_COLLECTION = 'emergencyContacts';
+export const EMERGENCY_CONTACTS_COLLECTION = COLLECTIONS.emergencyContacts;
 
 function contactsRef() {
   return collection(getFirebaseFirestore(), EMERGENCY_CONTACTS_COLLECTION);

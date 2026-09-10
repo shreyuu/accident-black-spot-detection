@@ -1,5 +1,7 @@
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 
+import { COLLECTIONS } from '@accident-black-spot-detection/shared-types';
+
 import { getFirebaseFirestore } from '@/services/firebase/app';
 import type { AlertType } from '@/types/domain';
 import { logger } from '@/utils/logger';
@@ -17,7 +19,7 @@ import { logger } from '@/utils/logger';
  * kept. The black spot id already identifies where the alert happened.
  */
 
-export const ALERT_LOGS_COLLECTION = 'alertLogs';
+export const ALERT_LOGS_COLLECTION = COLLECTIONS.alertLogs;
 
 export interface RecordAlertInput {
   userId: string;

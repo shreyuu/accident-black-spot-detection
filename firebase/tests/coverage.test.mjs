@@ -4,7 +4,11 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it } from 'node:test';
 
-import { COLLECTIONS } from '@accident-black-spot-detection/shared-types';
+import {
+  CLIENT_CREATABLE_STATUS,
+  COLLECTIONS,
+  MODERATION_ONLY_FIELDS,
+} from '@accident-black-spot-detection/shared-types';
 
 /**
  * Every collection has a rule, and every rule has a collection.
@@ -81,6 +85,55 @@ describe('firestore.rules covers the shared collection vocabulary', () => {
     );
 
     assert.deepEqual(roleWrites, []);
+  });
+});
+
+/**
+ * The moderation vocabulary the rules hard-code, held to the shared constants.
+ *
+ * `MODERATION_ONLY_FIELDS` says it exists "so the rules, the mobile client and
+ * the dashboard all derive their behaviour from one list instead of three
+ * hand-maintained copies". Two of those three do. `firestore.rules` cannot
+ * import TypeScript, so it spells the list out — which makes it exactly the
+ * hand-maintained third copy the constant was written to prevent, and nothing
+ * noticed the difference.
+ *
+ * Same for `CLIENT_CREATABLE_STATUS`: its own comment says "Enforced in
+ * firestore.rules", and until now nothing checked that claim. Both constants
+ * were unreferenced by any TypeScript, which is what made them look like dead
+ * weight during a cleanup — the value was real, but only as documentation, and
+ * documentation nothing verifies is a comment with a version number.
+ *
+ * Reading the rules as text is the only way to close this. It is the same
+ * approach the collection parity above takes, for the same reason.
+ */
+describe('firestore.rules matches the shared moderation vocabulary', () => {
+  it('refuses every moderation-only field on a client write', () => {
+    const listed = rules.match(/function hasNoModerationFields\(data\) \{[\s\S]*?\}/);
+    assert.ok(listed, '`hasNoModerationFields` is gone — the rules no longer refuse these fields.');
+
+    const inRules = new Set([...listed[0].matchAll(/'([A-Za-z]+)'/g)].map((match) => match[1]));
+
+    // `status` is in the shared list but not in this function: a client *does*
+    // write it, and the separate `status == CLIENT_CREATABLE_STATUS` line below
+    // constrains the value rather than forbidding the key.
+    const expected = MODERATION_ONLY_FIELDS.filter((field) => field !== 'status');
+    const missing = expected.filter((field) => !inRules.has(field));
+
+    assert.deepEqual(
+      missing,
+      [],
+      `MODERATION_ONLY_FIELDS names ${missing.join(', ')}, which a client may still write: ` +
+        'add them to `hasNoModerationFields` in firestore.rules.',
+    );
+  });
+
+  it('pins a created report to the only status a client may cause', () => {
+    assert.ok(
+      rules.includes(`request.resource.data.status == '${CLIENT_CREATABLE_STATUS}'`),
+      `firestore.rules no longer pins a created report to '${CLIENT_CREATABLE_STATUS}'. ` +
+        'That line is what stops a tampered client from publishing its own report.',
+    );
   });
 });
 

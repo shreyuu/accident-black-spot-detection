@@ -291,23 +291,3 @@ export type EmergencyContactInput = Pick<
 
 export const ALERT_TYPES = ['foreground', 'background', 'push'] as const;
 export type AlertType = (typeof ALERT_TYPES)[number];
-
-/**
- * A record that the user was warned, at `alertLogs/{id}`.
- *
- * Coordinates are deliberately **optional** and are not written by the app in
- * Phase 4. Storing a position with every alert would build exactly the
- * continuous location history the project promised not to keep — the user is
- * told their location is not uploaded. The black spot id already says where the
- * alert happened, to the precision anyone needs.
- */
-export interface AlertLog {
-  id: string;
-  userId: string;
-  blackSpotId: string;
-  distanceM: number;
-  alertType: AlertType;
-  latitude?: number;
-  longitude?: number;
-  createdAt: Timestamp | null;
-}

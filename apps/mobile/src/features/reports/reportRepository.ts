@@ -15,6 +15,7 @@ import {
 
 import {
   buildReportFingerprintId,
+  COLLECTIONS,
   evaluateReportLimits,
   type ReportFingerprintState,
   type ReportLimitRefusal,
@@ -37,7 +38,7 @@ import { logger } from '@/utils/logger';
  * is therefore load-bearing, not an optimisation.
  */
 
-export const INCIDENT_REPORTS_COLLECTION = 'incidentReports';
+export const INCIDENT_REPORTS_COLLECTION = COLLECTIONS.incidentReports;
 
 /** Reports fetched for the history screen. Bounded so one query stays cheap. */
 export const MY_REPORTS_PAGE_SIZE = 50;
@@ -55,8 +56,8 @@ export function reserveIncidentReportId(): string {
   return doc(collection(getFirebaseFirestore(), INCIDENT_REPORTS_COLLECTION)).id;
 }
 
-export const RATE_LIMITS_COLLECTION = 'reportRateLimits';
-export const FINGERPRINTS_COLLECTION = 'reportFingerprints';
+export const RATE_LIMITS_COLLECTION = COLLECTIONS.reportRateLimits;
+export const FINGERPRINTS_COLLECTION = COLLECTIONS.reportFingerprints;
 
 /** Refusal reason → the `AppError` kind that gives the right UI affordance. */
 function toLimitError(refusal: ReportLimitRefusal): AppError {
