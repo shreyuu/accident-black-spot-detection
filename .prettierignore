@@ -28,3 +28,11 @@ __pycache__/
 # prettier walks the working tree, not the index — without this line a freshly
 # built graph fails `npm run format:check` on ~50 files of machine output.
 graphify-out/
+
+# Video output: the rendered cuts, their Hyperframes projects, the extracted
+# audio data and the plans written beside them. Same reasoning as graphify-out/
+# above — machine-written HTML, JSON and JS that prettier would fail the gate on
+# and that is not ours to reformat. The README links into these directories.
+video-app-walkthrough/
+video-app-walkthrough-vertical/
+video-analytics-pipeline/

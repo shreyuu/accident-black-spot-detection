@@ -33,6 +33,39 @@ not do and what has never been verified.
 
 ---
 
+## Watch it
+
+Three short videos, if you would rather see it than set it up. All three are silent-friendly but
+have a quiet audio bed, and all three end on the same line.
+
+[![The app walkthrough](video-app-walkthrough/app-walkthrough-landscape.jpg)](video-app-walkthrough/app-walkthrough-landscape.mp4)
+
+| Video                                                                                                                        | Format    | Length | What it covers                                                                     |
+| ---------------------------------------------------------------------------------------------------------------------------- | --------- | ------ | ---------------------------------------------------------------------------------- |
+| [`video-app-walkthrough/app-walkthrough-landscape.mp4`](video-app-walkthrough/app-walkthrough-landscape.mp4)                 | 1920x1080 | 24s    | The app: map warnings, a report that goes to a moderator, and the SOS screen       |
+| [`video-app-walkthrough-vertical/app-walkthrough-vertical.mp4`](video-app-walkthrough-vertical/app-walkthrough-vertical.mp4) | 1080x1920 | 24s    | The same cut, relaid out for phones                                                |
+| [`video-analytics-pipeline/analytics-pipeline-landscape.mp4`](video-analytics-pipeline/analytics-pipeline-landscape.mp4)     | 1920x1080 | 25s    | The analytics service: DBSCAN, ECLAT, the risk score, and the candidate that waits |
+
+**Every line of narration is a string that exists in this repository.** The first two cuts are
+scripted entirely from [`apps/mobile/src/constants/disclaimer.ts`](apps/mobile/src/constants/disclaimer.ts),
+the accessibility hints in [`apps/mobile/app/(tabs)/sos.tsx`](apps/mobile/app/%28tabs%29/sos.tsx), and the
+constraint enforced in [`firebase/firestore.rules`](firebase/firestore.rules). The third quotes
+[`docs/eclat-methodology.md`](docs/eclat-methodology.md) and uses the real algorithm parameters —
+haversine DBSCAN at `eps 150 m` / `min_samples 3`, ECLAT at `min_support 0.5`, and the risk-score
+weights from [`docs/eclat-methodology.md`](docs/eclat-methodology.md#5-what-the-output-means--and-does-not).
+
+**What they are not.** They are designed recreations of the interface, not screen recordings of a
+running build, and the data in them is invented for the purpose — the coordinates, the `200 m
+ahead`, the `4 recorded incidents`, the `89%` support and the score of `78` are all illustrative.
+They show how the system is meant to read, not measured output or real coverage. For what the
+project has actually been verified to do, [`docs/known-limitations.md`](docs/known-limitations.md)
+remains the honest list.
+
+Each video's directory also holds its plan, its composition brief, the Hyperframes project it was
+rendered from, a poster frame and a share caption.
+
+---
+
 ## Quick start
 
 Six commands, from a fresh clone to a running app with data in it. Prerequisites are in the next
