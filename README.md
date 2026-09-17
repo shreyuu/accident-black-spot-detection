@@ -35,16 +35,36 @@ not do and what has never been verified.
 
 ## Watch it
 
-Three short videos, if you would rather see it than set it up. All three are silent-friendly but
-have a quiet audio bed, and all three end on the same line.
+Three short videos, if you would rather see it than set it up. The GIFs below play inline and are
+silent; **click any of them for the MP4**, which is the same cut with a quiet audio bed. All three
+end on the same line.
 
-[![The app walkthrough](video-app-walkthrough/app-walkthrough-landscape.jpg)](video-app-walkthrough/app-walkthrough-landscape.mp4)
+[![The app walkthrough](video-app-walkthrough/app-walkthrough-landscape.gif)](video-app-walkthrough/app-walkthrough-landscape.mp4)
 
-| Video                                                                                                                        | Format    | Length | What it covers                                                                     |
-| ---------------------------------------------------------------------------------------------------------------------------- | --------- | ------ | ---------------------------------------------------------------------------------- |
-| [`video-app-walkthrough/app-walkthrough-landscape.mp4`](video-app-walkthrough/app-walkthrough-landscape.mp4)                 | 1920x1080 | 24s    | The app: map warnings, a report that goes to a moderator, and the SOS screen       |
-| [`video-app-walkthrough-vertical/app-walkthrough-vertical.mp4`](video-app-walkthrough-vertical/app-walkthrough-vertical.mp4) | 1080x1920 | 24s    | The same cut, relaid out for phones                                                |
-| [`video-analytics-pipeline/analytics-pipeline-landscape.mp4`](video-analytics-pipeline/analytics-pipeline-landscape.mp4)     | 1920x1080 | 25s    | The analytics service: DBSCAN, ECLAT, the risk score, and the candidate that waits |
+**The app** — map warnings, a report that goes to a moderator, and the SOS screen. 1920x1080, 24s ·
+[MP4](video-app-walkthrough/app-walkthrough-landscape.mp4)
+
+<details>
+<summary><b>The same cut, relaid out for phones</b> — 1080x1920, 24s</summary>
+
+<br />
+
+[![The app walkthrough, vertical](video-app-walkthrough-vertical/app-walkthrough-vertical.gif)](video-app-walkthrough-vertical/app-walkthrough-vertical.mp4)
+
+[MP4](video-app-walkthrough-vertical/app-walkthrough-vertical.mp4)
+
+</details>
+
+<details>
+<summary><b>The analytics service</b> — DBSCAN, ECLAT, the risk score, and the candidate that waits. 1920x1080, 25s</summary>
+
+<br />
+
+[![The analytics pipeline](video-analytics-pipeline/analytics-pipeline-landscape.gif)](video-analytics-pipeline/analytics-pipeline-landscape.mp4)
+
+[MP4](video-analytics-pipeline/analytics-pipeline-landscape.mp4)
+
+</details>
 
 **Every line of narration is a string that exists in this repository.** The first two cuts are
 scripted entirely from [`apps/mobile/src/constants/disclaimer.ts`](apps/mobile/src/constants/disclaimer.ts),
@@ -62,7 +82,10 @@ project has actually been verified to do, [`docs/known-limitations.md`](docs/kno
 remains the honest list.
 
 Each video's directory also holds its plan, its composition brief, the Hyperframes project it was
-rendered from, a poster frame and a share caption.
+rendered from, a poster frame, the inline GIF and a share caption. The GIFs are rendered from the
+same compositions with the ambient background motion held still — GIF cannot encode a background
+that changes every frame, and freezing it cut them from 12 MB to around 2.5 MB at higher
+resolution.
 
 ---
 
