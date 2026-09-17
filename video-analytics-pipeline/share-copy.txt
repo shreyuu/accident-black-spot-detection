@@ -1,0 +1,3 @@
+The black spots in my road-safety app are found by DBSCAN and an ECLAT implementation I had to write myself, because there isn't a maintained one for Python.
+
+None of them reach a user until a person approves them. The algorithm does every step and still doesn't get the vote.

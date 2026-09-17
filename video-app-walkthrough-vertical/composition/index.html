@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="en" data-resolution="portrait">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1080, height=1920" />
+    <title>Accident Black Spot Detection — brag (vertical)</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { margin: 0; width: 1080px; height: 1920px; overflow: hidden; background: #060F1D; }
+
+      /* Palette verbatim from apps/mobile/src/theme/tokens.ts (dark theme). */
+      :root {
+        --navy900:#060F1D; --navy800:#0B1F3A; --navy700:#122C4F; --navy600:#1B3B66;
+        --grey50:#F6F8FB; --grey300:#B3BDCC; --grey400:#8794A6;
+        --blue300:#7FB0F7; --green300:#5FCB99; --amber300:#F0B449;
+        --orange300:#F79B5C; --red300:#F1888C;
+        --sans: ui-sans-serif, system-ui, sans-serif;
+        --mono: ui-monospace, monospace;
+      }
+      #root {
+        position: relative; width: 100%; height: 100%; overflow: hidden;
+        background: var(--navy900); font-family: var(--sans); color: var(--grey50);
+      }
+
+      /* ---------- persistent background ---------- */
+      #bg { position: absolute; inset: 0; }
+      #glow {
+        position: absolute; left: -20px; top: 260px; width: 1120px; height: 1120px;
+        border-radius: 999px; opacity: 0.16;
+        background: radial-gradient(circle, rgba(127,176,247,0.55) 0%, rgba(127,176,247,0.14) 38%, rgba(6,15,29,0) 68%);
+      }
+      #ghostring {
+        position: absolute; left: 480px; top: 1180px; width: 940px; height: 940px;
+        border-radius: 999px; border: 3px solid var(--navy600); opacity: 0.5;
+      }
+      #ghostring2 {
+        position: absolute; left: -300px; top: -260px; width: 780px; height: 780px;
+        border-radius: 999px; border: 2px solid var(--navy600); opacity: 0.34;
+      }
+      #texture {
+        position: absolute; inset: 0; opacity: 0.4;
+        background-image: radial-gradient(rgba(127,176,247,0.14) 1px, rgba(0,0,0,0) 1px);
+        background-size: 5px 5px;
+      }
+      #vignette {
+        position: absolute; inset: 0; opacity: 0.85;
+        background: radial-gradient(circle at 50% 44%, rgba(6,15,29,0) 32%, rgba(6,15,29,0.7) 76%, rgba(6,15,29,0.95) 100%);
+      }
+      #topbar { position: absolute; left: 0; top: 150px; width: 1080px; height: 2px; background: var(--navy600); opacity: 0.7; }
+      #botbar { position: absolute; left: 0; top: 1800px; width: 1080px; height: 2px; background: var(--navy600); opacity: 0.7; }
+      #slug  { position: absolute; left: 80px; top: 100px; font-family: var(--mono); font-size: 18px; letter-spacing: 0.2em; color: var(--grey400); }
+      #slugr { position: absolute; right: 80px; top: 100px; font-family: var(--mono); font-size: 18px; letter-spacing: 0.2em; color: var(--grey400); }
+
+      .clip { position: absolute; inset: 0; }
+      .inner { position: absolute; inset: 0; }
+      .rule { position: absolute; height: 3px; background: var(--blue300); }
+      .mono { font-family: var(--mono); font-size: 24px; letter-spacing: 0.05em; color: var(--grey400); }
+      .kicker { position: absolute; font-family: var(--mono); font-size: 22px; letter-spacing: 0.22em; color: var(--blue300); }
+
+      /* ---------- scene 1 ---------- */
+      #s1-k { left: 80px; top: 556px; }
+      #s1-rule { left: 80px; top: 616px; width: 180px; }
+      #s1-line {
+        position: absolute; left: 80px; top: 672px; width: 920px; height: 400px;
+        font-size: 80px; line-height: 92px; font-weight: 800; letter-spacing: -0.035em;
+      }
+      #s1-crule { position: absolute; left: 80px; top: 1184px; width: 620px; height: 2px; background: var(--navy600); }
+      #s1-credit { position: absolute; left: 80px; top: 1218px; }
+
+      /* ---------- shared map stage (scenes 2 + 3) ---------- */
+      #map { position: absolute; left: 0; top: 150px; width: 1080px; height: 1030px; overflow: hidden; }
+      #roads { position: absolute; inset: 0; }
+      .spot { position: absolute; width: 0; height: 0; }
+      .ring { position: absolute; border-radius: 999px; border-width: 3px; border-style: solid; }
+      .dot { position: absolute; left: -12px; top: -12px; width: 24px; height: 24px; border-radius: 999px; }
+      .tag {
+        position: absolute; top: -19px; left: 26px; padding: 6px 14px; border-radius: 999px;
+        font-size: 20px; font-weight: 700; letter-spacing: 0.13em; color: var(--navy900); white-space: nowrap;
+      }
+      #me { position: absolute; width: 0; height: 0; }
+      #me-halo { position: absolute; left: -42px; top: -42px; width: 84px; height: 84px; border-radius: 999px; background: rgba(127,176,247,0.22); }
+      #me-dot { position: absolute; left: -14px; top: -14px; width: 28px; height: 28px; border-radius: 999px; background: var(--blue300); border: 4px solid var(--navy900); }
+
+      #panel { position: absolute; left: 0; top: 1180px; width: 1080px; height: 620px; background: var(--navy900); opacity: 0.95; }
+      #panel-edge { position: absolute; left: 0; top: 1180px; width: 1080px; height: 2px; background: var(--navy600); }
+
+      #s2-k { left: 80px; top: 1248px; }
+      #s2-rule { left: 80px; top: 1302px; width: 140px; }
+      #s2-line {
+        position: absolute; left: 80px; top: 1348px; width: 920px; height: 150px;
+        font-size: 54px; line-height: 66px; font-weight: 800; letter-spacing: -0.03em;
+      }
+      .leg { position: absolute; top: 1580px; display: flex; align-items: center; }
+      .leg-sw { width: 20px; height: 20px; border-radius: 6px; margin-right: 14px; }
+      .leg-tx { font-family: var(--mono); font-size: 23px; letter-spacing: 0.08em; color: var(--grey300); }
+
+      /* ---------- scene 3 ---------- */
+      #warn {
+        position: absolute; left: 80px; top: 1240px; width: 920px;
+        background: var(--navy800); border: 3px solid var(--navy600);
+        border-radius: 20px; padding: 40px 44px 38px;
+      }
+      #warn-pill {
+        display: inline-block; padding: 10px 24px; border-radius: 999px;
+        background: var(--orange300); color: var(--navy900);
+        font-size: 24px; font-weight: 800; letter-spacing: 0.16em;
+      }
+      #warn-dist { margin-top: 24px; font-size: 76px; font-weight: 800; letter-spacing: -0.035em; }
+      #warn-sub { margin-top: 14px; font-size: 34px; line-height: 46px; color: var(--grey300); }
+      #warn-hr { margin-top: 28px; height: 2px; background: var(--navy600); }
+      #warn-foot { margin-top: 24px; font-family: var(--mono); font-size: 23px; color: var(--grey400); }
+
+      /* ---------- scene 4 ---------- */
+      #s4-k { left: 80px; top: 300px; }
+      #s4-rule { left: 80px; top: 356px; width: 140px; }
+      #s4-line {
+        position: absolute; left: 80px; top: 404px; width: 920px; height: 230px;
+        font-size: 56px; line-height: 70px; font-weight: 800; letter-spacing: -0.03em;
+      }
+      #s4-form {
+        position: absolute; left: 80px; top: 706px; width: 920px;
+        background: var(--navy800); border: 3px solid var(--navy600); border-radius: 20px; padding: 40px 44px 44px;
+      }
+      .fl { font-size: 28px; color: var(--grey300); }
+      .fv { margin-top: 12px; padding: 18px 24px; border-radius: 14px; background: var(--navy700); border: 2px solid var(--navy600); font-size: 32px; font-weight: 600; }
+      #s4-sev { margin-top: 30px; }
+      #s4-sevpill {
+        display: inline-block; margin-top: 12px; padding: 13px 30px; border-radius: 999px;
+        background: var(--orange300); color: var(--navy900); font-size: 27px; font-weight: 800; letter-spacing: 0.14em;
+      }
+      #s4-btn {
+        margin-top: 38px; padding: 24px 0; border-radius: 14px;
+        background: var(--blue300); color: var(--navy900); font-size: 32px; font-weight: 800; text-align: center;
+      }
+      #cursor { position: absolute; left: 700px; top: 1196px; width: 32px; height: 32px; border-radius: 999px; background: var(--grey50); opacity: 0; }
+      #s4-row {
+        position: absolute; left: 80px; top: 1330px; width: 920px;
+        background: var(--navy800); border: 3px solid var(--navy600); border-radius: 16px; padding: 26px 30px;
+        display: flex; align-items: center; justify-content: space-between;
+      }
+      #s4-rowtx { font-size: 30px; font-weight: 600; }
+      #s4-chip {
+        padding: 11px 22px; border-radius: 999px; background: var(--navy700); border: 2px solid var(--grey400);
+        color: var(--grey300); font-size: 22px; font-weight: 700; letter-spacing: 0.1em;
+      }
+      #s4-credit { position: absolute; left: 80px; top: 1480px; }
+
+      /* ---------- scene 5 ---------- */
+      #sos-btn {
+        position: absolute; left: 350px; top: 380px; width: 380px; height: 380px;
+        border-radius: 999px; background: var(--red300);
+        display: flex; align-items: center; justify-content: center;
+        color: var(--navy900); font-size: 96px; font-weight: 800; letter-spacing: 0.06em;
+      }
+      #sos-halo { position: absolute; left: 300px; top: 330px; width: 480px; height: 480px; border-radius: 999px; border: 3px solid var(--red300); opacity: 0.4; }
+      #s5-k { left: 80px; top: 900px; }
+      #s5-rule { left: 80px; top: 956px; width: 140px; }
+      #s5-line {
+        position: absolute; left: 80px; top: 1004px; width: 920px; height: 230px;
+        font-size: 54px; line-height: 70px; font-weight: 800; letter-spacing: -0.03em;
+      }
+      #s5-credit { position: absolute; left: 80px; top: 1300px; }
+
+      /* ---------- scene 6 ---------- */
+      #s6-rule { left: 80px; top: 800px; width: 180px; }
+      #s6-name {
+        position: absolute; left: 80px; top: 858px; width: 920px; height: 200px;
+        font-size: 74px; line-height: 86px; font-weight: 800; letter-spacing: -0.035em;
+      }
+      #s6-tag { position: absolute; left: 80px; top: 1112px; width: 920px; font-size: 38px; color: var(--grey300); font-weight: 400; }
+      #s6-scrim { position: absolute; inset: 0; background: var(--navy900); opacity: 0; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="24.02" data-width="1080" data-height="1920">
+      <div id="bg">
+        <div id="glow"></div>
+        <div id="ghostring" data-layout-allow-overflow></div>
+        <div id="ghostring2" data-layout-allow-overflow></div>
+        <div id="texture"></div>
+        <div id="vignette"></div>
+        <div id="topbar"></div>
+        <div id="botbar"></div>
+        <div id="slug" data-layout-allow-occlusion>ACCIDENT BLACK SPOT DETECTION</div>
+        <div id="slugr" data-layout-allow-occlusion>EMULATOR BUILD</div>
+      </div>
+
+      <!-- ===== Scene 1 — the refusal ===== -->
+      <section id="s1" class="clip" data-start="0" data-duration="3.95" data-track-index="1">
+        <div class="inner">
+          <div id="s1-k" class="kicker">SHIPPED IN THE APP</div>
+          <div id="s1-rule" class="rule"></div>
+          <div id="s1-line">This app cannot summon emergency services.</div>
+          <div id="s1-crule"></div>
+          <div id="s1-credit" class="mono">src/constants/disclaimer.ts</div>
+        </div>
+      </section>
+
+      <!-- ===== Shared map stage — scenes 2 and 3 ===== -->
+      <section id="mapstage" class="clip" data-start="3.80" data-duration="9.45" data-track-index="1">
+        <div class="inner">
+          <div id="map">
+            <svg id="roads" viewBox="0 0 1080 1030" xmlns="http://www.w3.org/2000/svg">
+              <g stroke="#1B3B66" fill="none" stroke-width="3" opacity="0.62">
+                <path d="M0 760 L360 690 L640 742 L1080 640" />
+                <path d="M0 232 L380 318 L700 268 L1080 372" />
+                <path d="M420 0 L466 420 L430 760 L492 1030" />
+                <path d="M820 0 L788 300 L856 640 L812 1030" />
+                <path d="M0 520 L1080 486" />
+              </g>
+              <g stroke="#122C4F" fill="none" stroke-width="2" opacity="0.7">
+                <path d="M0 120 L1080 96" />
+                <path d="M0 900 L1080 880" />
+                <path d="M180 0 L212 1030" />
+                <path d="M980 0 L950 1030" />
+              </g>
+            </svg>
+
+            <div class="spot" id="sp1" style="left: 300px; top: 270px">
+              <div class="ring" style="left:-130px; top:-130px; width:260px; height:260px; border-color:#5FCB99; background:rgba(95,203,153,0.12)"></div>
+              <div class="dot" style="background:#5FCB99"></div>
+              <div class="tag" style="background:#5FCB99">LOW</div>
+            </div>
+            <div class="spot" id="sp2" style="left: 790px; top: 190px">
+              <div class="ring" style="left:-118px; top:-118px; width:236px; height:236px; border-color:#F0B449; background:rgba(240,180,73,0.12)"></div>
+              <div class="dot" style="background:#F0B449"></div>
+              <div class="tag" style="background:#F0B449">MEDIUM</div>
+            </div>
+            <div class="spot" id="sp3" style="left: 520px; top: 470px">
+              <div class="ring" style="left:-150px; top:-150px; width:300px; height:300px; border-color:#F79B5C; background:rgba(247,155,92,0.14)"></div>
+              <div class="dot" style="background:#F79B5C"></div>
+              <div class="tag" style="background:#F79B5C">HIGH</div>
+            </div>
+            <div class="spot" id="sp4" style="left: 870px; top: 700px">
+              <div class="ring" style="left:-118px; top:-118px; width:236px; height:236px; border-color:#F79B5C; background:rgba(247,155,92,0.12)"></div>
+              <div class="dot" style="background:#F79B5C"></div>
+              <div class="tag" style="background:#F79B5C">HIGH</div>
+            </div>
+            <div class="spot" id="sp5" style="left: 250px; top: 790px">
+              <div class="ring" style="left:-134px; top:-134px; width:268px; height:268px; border-color:#F1888C; background:rgba(241,136,140,0.14)"></div>
+              <div class="dot" style="background:#F1888C"></div>
+              <div class="tag" style="background:#F1888C">CRITICAL</div>
+            </div>
+
+            <div id="me" style="left: 170px; top: 950px">
+              <div id="me-halo"></div>
+              <div id="me-dot"></div>
+            </div>
+          </div>
+          <div id="panel" data-layout-allow-overflow></div>
+          <div id="panel-edge"></div>
+        </div>
+      </section>
+
+      <!-- ===== Scene 2 — the map builds ===== -->
+      <section id="s2" class="clip" data-start="3.80" data-duration="5.05" data-track-index="2">
+        <div class="inner">
+          <div id="s2-k" class="kicker">WHAT IT DOES DO</div>
+          <div id="s2-rule" class="rule"></div>
+          <div id="s2-line">It warns you before you get there.</div>
+          <div class="leg" id="lg1" style="left: 80px"><div class="leg-sw" style="background:#5FCB99"></div><div class="leg-tx">low</div></div>
+          <div class="leg" id="lg2" style="left: 296px"><div class="leg-sw" style="background:#F0B449"></div><div class="leg-tx">medium</div></div>
+          <div class="leg" id="lg3" style="left: 560px"><div class="leg-sw" style="background:#F79B5C"></div><div class="leg-tx">high</div></div>
+          <div class="leg" id="lg4" style="left: 768px"><div class="leg-sw" style="background:#F1888C"></div><div class="leg-tx">critical</div></div>
+        </div>
+      </section>
+
+      <!-- ===== Scene 3 — the warning arrives ===== -->
+      <section id="s3" class="clip" data-start="8.74" data-duration="4.51" data-track-index="2">
+        <div class="inner">
+          <div id="warn">
+            <div id="warn-pill">HIGH RISK</div>
+            <div id="warn-dist">200 m ahead</div>
+            <div id="warn-sub">Junction with 4 recorded incidents.</div>
+            <div id="warn-hr"></div>
+            <div id="warn-foot">Distances shown are approximate.</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== Scene 4 — it does not publish itself ===== -->
+      <section id="s4" class="clip" data-start="13.11" data-duration="4.46" data-track-index="1">
+        <div class="inner">
+          <div id="s4-k" class="kicker">MODERATION</div>
+          <div id="s4-rule" class="rule"></div>
+          <div id="s4-line">An algorithm never publishes a warning on its own.</div>
+          <div id="s4-form">
+            <div class="fl">What are you reporting?</div>
+            <div class="fv">Accident</div>
+            <div id="s4-sev">
+              <div class="fl">How serious was it?</div>
+              <div id="s4-sevpill">HIGH</div>
+            </div>
+            <div id="s4-btn">Submit report</div>
+          </div>
+          <div id="cursor"></div>
+          <div id="s4-row">
+            <div id="s4-rowtx">Accident · your report</div>
+            <div id="s4-chip">PENDING REVIEW</div>
+          </div>
+          <div id="s4-credit" class="mono">firebase/firestore.rules</div>
+        </div>
+      </section>
+
+      <!-- ===== Scene 5 — the dialler ===== -->
+      <section id="s5" class="clip" data-start="17.47" data-duration="3.91" data-track-index="1">
+        <div class="inner">
+          <div id="sos-halo"></div>
+          <div id="sos-btn">SOS</div>
+          <div id="s5-k" class="kicker">EMERGENCY SCREEN</div>
+          <div id="s5-rule" class="rule" style="background:#F1888C"></div>
+          <div id="s5-line">Opens your dialler. This app never places a call by itself.</div>
+          <div id="s5-credit" class="mono">app/(tabs)/sos.tsx</div>
+        </div>
+      </section>
+
+      <!-- scrim first, so the name draws above it -->
+      <section id="s6b" class="clip" data-start="20.30" data-duration="3.72" data-track-index="3">
+        <div id="s6-scrim"></div>
+      </section>
+      <section id="s6" class="clip" data-start="21.28" data-duration="2.74" data-track-index="1">
+        <div class="inner">
+          <div id="s6-rule" class="rule"></div>
+          <div id="s6-name">Accident Black Spot Detection</div>
+          <div id="s6-tag">Every warning has a human behind it.</div>
+        </div>
+      </section>
+
+      <!-- ===== audio — identical cue sheet to the landscape cut ===== -->
+      <audio id="bed" src="assets/music/happy-beats-business-moves-vol-12-by-ende-dot-app.mp3"
+             data-start="0" data-duration="24.02" data-track-index="10" data-volume="0.10"></audio>
+      <audio id="sfx-m1" src="assets/sfx/interface/drop_002.ogg" data-start="4.39" data-track-index="11" data-volume="0.34"></audio>
+      <audio id="sfx-m2" src="assets/sfx/interface/drop_003.ogg" data-start="5.34" data-track-index="12" data-volume="0.34"></audio>
+      <audio id="sfx-m3" src="assets/sfx/interface/drop_002.ogg" data-start="6.00" data-track-index="13" data-volume="0.34"></audio>
+      <audio id="sfx-m4" src="assets/sfx/interface/drop_003.ogg" data-start="6.56" data-track-index="14" data-volume="0.34"></audio>
+      <audio id="sfx-m5" src="assets/sfx/interface/drop_002.ogg" data-start="7.09" data-track-index="15" data-volume="0.34"></audio>
+      <audio id="sfx-warn" src="assets/sfx/impact/impactSoft_medium_001.ogg" data-start="8.74" data-track-index="16" data-volume="0.52"></audio>
+      <audio id="sfx-click" src="assets/sfx/interface/click_003.ogg" data-start="14.73" data-track-index="17" data-volume="0.45"></audio>
+      <audio id="sfx-chip" src="assets/sfx/interface/drop_003.ogg" data-start="15.29" data-track-index="18" data-volume="0.3"></audio>
+    </div>
+
+    <script src="audio-data.js"></script>
+    <script>
+      var tl = gsap.timeline({ paused: true });
+
+      /* ambient background — finite repeats, three periods */
+      tl.fromTo("#ghostring", { rotation: 0 }, { rotation: 14, duration: 24.02, ease: "none" }, 0);
+      tl.fromTo("#ghostring2", { rotation: 0 }, { rotation: -10, duration: 24.02, ease: "none" }, 0);
+      tl.fromTo("#texture", { y: 0 }, { y: -26, duration: 24.02, ease: "none" }, 0);
+      tl.to("#ghostring", { opacity: 0.30, duration: 4.0, ease: "sine.inOut", yoyo: true, repeat: 5 }, 0);
+      tl.to("#ghostring2", { opacity: 0.20, duration: 3.1, ease: "sine.inOut", yoyo: true, repeat: 7 }, 0);
+      tl.to("#slug", { opacity: 0.55, duration: 6.0, ease: "sine.inOut", yoyo: true, repeat: 3 }, 0);
+      tl.to("#slugr", { opacity: 0.55, duration: 5.2, ease: "sine.inOut", yoyo: true, repeat: 4 }, 0);
+
+      /* ---------------- Scene 1 — the refusal ---------------- */
+      tl.fromTo("#s1-k", { opacity: 0, y: -14 }, { opacity: 1, y: 0, duration: 0.42, ease: "power2.out" }, 0.18);
+      tl.fromTo("#s1-rule", { scaleX: 0, transformOrigin: "left center" }, { scaleX: 1, duration: 0.46, ease: "power3.inOut" }, 0.26);
+      tl.fromTo("#s1-line", { opacity: 0, y: 34 }, { opacity: 1, y: 0, duration: 0.52, ease: "power3.out" }, 0.40);
+      tl.fromTo("#s1-crule", { scaleX: 0, transformOrigin: "left center" }, { scaleX: 1, duration: 0.5, ease: "power2.inOut" }, 1.72);
+      tl.fromTo("#s1-credit", { opacity: 0, x: -18 }, { opacity: 1, x: 0, duration: 0.44, ease: "power2.out" }, 1.88);
+      tl.to("#s1 .inner", { opacity: 0, duration: 0.34, ease: "power1.in" }, 3.52);
+
+      /* ---------------- Scene 2 — the map builds ----------------
+         Portrait: the panel rises from the bottom instead of sliding in. */
+      tl.fromTo("#roads", { opacity: 0 }, { opacity: 1, duration: 0.7, ease: "power2.out" }, 3.86);
+      tl.fromTo("#panel", { y: 620 }, { y: 0, duration: 0.55, ease: "power3.out" }, 3.82);
+      tl.fromTo("#panel-edge", { scaleX: 0, transformOrigin: "left center" }, { scaleX: 1, duration: 0.5, ease: "power2.out" }, 3.9);
+      tl.fromTo("#s2-k", { opacity: 0, y: -12 }, { opacity: 1, y: 0, duration: 0.4, ease: "power2.out" }, 4.06);
+      tl.fromTo("#s2-rule", { scaleX: 0, transformOrigin: "left center" }, { scaleX: 1, duration: 0.42, ease: "power3.inOut" }, 4.12);
+      tl.fromTo("#s2-line", { opacity: 0, y: 26 }, { opacity: 1, y: 0, duration: 0.5, ease: "power3.out" }, 4.2);
+
+      tl.fromTo("#me-halo", { scale: 0, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.5, ease: "back.out(1.6)" }, 4.0);
+      tl.fromTo("#me-dot", { scale: 0 }, { scale: 1, duration: 0.44, ease: "back.out(2)" }, 4.06);
+      tl.to("#me-halo", { scale: 1.35, opacity: 0.45, duration: 1.6, ease: "sine.inOut", yoyo: true, repeat: 5 }, 4.6);
+
+      // beat-grid: markers at 4.39 / 5.34 / 6.00 / 6.56 / 7.09
+      var SPOTS = [
+        { id: "#sp1", t: 4.39 }, { id: "#sp2", t: 5.34 }, { id: "#sp3", t: 6.00 },
+        { id: "#sp4", t: 6.56 }, { id: "#sp5", t: 7.09 }
+      ];
+      for (var s = 0; s < SPOTS.length; s++) {
+        var sp = SPOTS[s];
+        tl.fromTo(sp.id + " .dot", { scale: 0 }, { scale: 1, duration: 0.34, ease: "back.out(2.4)" }, sp.t);
+        tl.fromTo(sp.id + " .ring", { scale: 0.25, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.62, ease: "power3.out" }, sp.t);
+        tl.fromTo(sp.id + " .tag", { opacity: 0, x: -12 }, { opacity: 1, x: 0, duration: 0.36, ease: "power2.out" }, sp.t + 0.14);
+      }
+      var LEGS = ["#lg1", "#lg2", "#lg3", "#lg4"];
+      for (var l = 0; l < LEGS.length; l++) {
+        tl.fromTo(LEGS[l], { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.38, ease: "power2.out" }, 5.5 + l * 0.18);
+      }
+      tl.to("#s2 .inner", { opacity: 0, duration: 0.3, ease: "power1.in" }, 8.5);
+
+      /* ---------------- Scene 3 — the warning arrives ---------------- */
+      tl.fromTo("#me", { x: 0, y: 0 }, { x: 270, y: -360, duration: 2.6, ease: "power1.inOut" }, 6.5);
+      tl.to("#me", { x: 350, y: -470, duration: 1.4, ease: "power1.out" }, 9.1);
+
+      // beat-locked: 8.74s (strongCue 1.00)
+      tl.fromTo("#warn", { opacity: 0, y: 48, scale: 0.97 }, { opacity: 1, y: 0, scale: 1, duration: 0.42, ease: "power4.out" }, 8.74);
+      tl.fromTo("#warn-pill", { opacity: 0, x: -20 }, { opacity: 1, x: 0, duration: 0.34, ease: "power2.out" }, 8.92);
+      tl.fromTo("#warn-dist", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.4, ease: "power3.out" }, 9.0);
+      tl.fromTo("#warn-sub", { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.4, ease: "power2.out" }, 9.16);
+      tl.fromTo("#warn-hr", { scaleX: 0, transformOrigin: "left center" }, { scaleX: 1, duration: 0.5, ease: "power2.inOut" }, 9.34);
+      tl.fromTo("#warn-foot", { opacity: 0 }, { opacity: 1, duration: 0.42, ease: "power1.out" }, 9.5);
+      tl.to("#sp3 .ring", { scale: 1.07, duration: 1.1, ease: "sine.inOut", yoyo: true, repeat: 3 }, 8.8);
+
+      tl.to("#s3 .inner", { opacity: 0, duration: 0.34, ease: "power1.in" }, 12.85);
+      tl.to("#mapstage .inner", { opacity: 0, duration: 0.36, ease: "power1.in" }, 12.87);
+
+      /* ---------------- Scene 4 — it does not publish itself ---------------- */
+      tl.fromTo("#s4-k", { opacity: 0, y: -12 }, { opacity: 1, y: 0, duration: 0.4, ease: "power2.out" }, 13.11);
+      tl.fromTo("#s4-rule", { scaleX: 0, transformOrigin: "left center" }, { scaleX: 1, duration: 0.44, ease: "power3.inOut" }, 13.2);
+      tl.fromTo("#s4-line", { opacity: 0, y: 28 }, { opacity: 1, y: 0, duration: 0.52, ease: "power3.out" }, 13.28);
+      tl.fromTo("#s4-form", { opacity: 0, y: 44 }, { opacity: 1, y: 0, duration: 0.5, ease: "power3.out" }, 13.5);
+      tl.fromTo("#s4-credit", { opacity: 0 }, { opacity: 1, duration: 0.4, ease: "power1.out" }, 14.0);
+
+      // the cursor presses Submit on the beat grid at 14.73
+      tl.fromTo("#cursor", { opacity: 0, x: 90, y: 80 }, { opacity: 1, x: 0, y: 0, duration: 0.5, ease: "power2.out" }, 14.1);
+      tl.to("#cursor", { scale: 0.62, duration: 0.1, ease: "power2.in" }, 14.73);
+      tl.to("#cursor", { scale: 1, duration: 0.18, ease: "power2.out" }, 14.83);
+      tl.to("#s4-btn", { scale: 0.97, duration: 0.1, ease: "power2.in" }, 14.73);
+      tl.to("#s4-btn", { scale: 1, duration: 0.2, ease: "power2.out" }, 14.83);
+      tl.to("#cursor", { opacity: 0, duration: 0.3, ease: "power1.in" }, 15.05);
+
+      tl.fromTo("#s4-row", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.44, ease: "power3.out" }, 15.29);
+      tl.fromTo("#s4-chip", { opacity: 0, scale: 0.86 }, { opacity: 1, scale: 1, duration: 0.38, ease: "back.out(1.8)" }, 15.45);
+      tl.to("#s4 .inner", { opacity: 0, duration: 0.34, ease: "power1.in" }, 17.2);
+
+      /* ---------------- Scene 5 — the dialler ---------------- */
+      tl.fromTo("#sos-btn", { opacity: 0, scale: 0.8 }, { opacity: 1, scale: 1, duration: 0.5, ease: "back.out(1.5)" }, 17.47);
+      tl.fromTo("#sos-halo", { opacity: 0, scale: 0.7 }, { opacity: 0.4, scale: 1, duration: 0.6, ease: "power3.out" }, 17.55);
+      tl.to("#sos-halo", { scale: 1.12, opacity: 0.18, duration: 1.5, ease: "sine.inOut", yoyo: true, repeat: 2 }, 18.2);
+      tl.fromTo("#s5-k", { opacity: 0, y: -12 }, { opacity: 1, y: 0, duration: 0.38, ease: "power2.out" }, 17.72);
+      tl.fromTo("#s5-rule", { scaleX: 0, transformOrigin: "left center" }, { scaleX: 1, duration: 0.42, ease: "power3.inOut" }, 17.8);
+      tl.fromTo("#s5-line", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.55, ease: "power3.out" }, 17.9);
+      tl.fromTo("#s5-credit", { opacity: 0 }, { opacity: 1, duration: 0.42, ease: "power1.out" }, 18.6);
+      tl.to("#s5 .inner", { opacity: 0, duration: 0.42, ease: "power1.in" }, 20.86);
+
+      /* ---------------- The empty beat, then the name ---------------- */
+      tl.fromTo("#s6-scrim", { opacity: 0 }, { opacity: 0.88, duration: 0.85, ease: "power2.inOut" }, 20.35);
+      tl.fromTo("#s6-rule", { scaleX: 0, transformOrigin: "left center" }, { scaleX: 1, duration: 0.5, ease: "power3.inOut" }, 21.84);
+      tl.fromTo("#s6-name", { opacity: 0, y: 26 }, { opacity: 1, y: 0, duration: 0.55, ease: "power3.out" }, 21.9);
+      // beat-locked: 22.93s (strongCue 1.00)
+      tl.fromTo("#s6-tag", { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" }, 22.93);
+
+      /* ---------------- music ---------------- */
+      tl.set("#bed", { volume: 0.10 }, 0);
+      tl.to("#bed", { volume: 0.22, duration: 0.7, ease: "sine.inOut" }, 3.5);
+      tl.to("#bed", { volume: 0.0, duration: 1.2, ease: "power2.in" }, 20.4);
+
+      /* ---------------- audio-reactive: background depth only ---------------- */
+      var glowEl = document.getElementById("glow");
+      var vigEl = document.getElementById("vignette");
+      var TOTAL = Math.min(AUDIO_RMS.length, Math.round(24.02 * AUDIO_FPS));
+
+      function applyAudioFrame(rms, bass, t) {
+        var gate = t < 20.4 ? 1 : Math.max(0, 1 - (t - 20.4) / 1.2);
+        var e = rms * gate;
+        var base = 0.10 - (1 - gate) * 0.03;
+        var grow = bass * gate * 110;
+        glowEl.style.opacity = (base + e * 0.13).toFixed(4);
+        glowEl.style.width = (1120 + grow).toFixed(1) + "px";
+        glowEl.style.height = (1120 + grow).toFixed(1) + "px";
+        glowEl.style.left = (-20 - grow / 2).toFixed(1) + "px";
+        glowEl.style.top = (260 - grow / 2).toFixed(1) + "px";
+        vigEl.style.opacity = (0.85 - e * 0.10).toFixed(4);
+      }
+      for (var f = 0; f < TOTAL; f++) {
+        tl.call(
+          (function (rms, bass, t) { return function () { applyAudioFrame(rms, bass, t); }; })(
+            AUDIO_RMS[f], AUDIO_BASS[f], f / AUDIO_FPS
+          ), [], f / AUDIO_FPS
+        );
+      }
+
+      window.__timelines["main"] = tl;
+      tl.seek(0);
+    </script>
+  </body>
+</html>
