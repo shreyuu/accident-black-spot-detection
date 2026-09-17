@@ -1,0 +1,29 @@
+I built a road-safety app that warns you about accident black spots before you reach them.
+
+Its best feature is the list of things it refuses to claim.
+
+From the SOS screen: "Opens your dialler. This app never places a call by itself."
+From onboarding: "An area with no warning is not necessarily safe."
+From the send path: the app cannot confirm a message was delivered — because expo-sms opens the composer and returns no usable status on Android at all.
+
+Most side projects are a demo. I wanted to find out what it takes to build one as if someone's safety depended on it being honest — because safety software is the one category where over-promising is the failure mode.
+
+Accident Black Spot Detection is three pieces: a React Native app that warns you as you approach an accident-prone area, a moderation dashboard where a human decides what becomes a published warning, and a Python service that mines approved reports to propose new hazards.
+
+What I'd actually want to be asked about:
+
+→ 𝗧𝗵𝗲 𝗮𝘂𝘁𝗵𝗼𝗿𝗶𝘀𝗮𝘁𝗶𝗼𝗻 𝗯𝗼𝘂𝗻𝗱𝗮𝗿𝘆. An algorithm never publishes a warning on its own, and nobody may approve their own report. Both enforced in Firestore security rules with their own test suite — not in application code a future refactor could quietly drop.
+
+→ 𝗧𝗵𝗲 𝗮𝗹𝗴𝗼𝗿𝗶𝘁𝗵𝗺. Haversine DBSCAN (eps 150 m, min_samples 3) over approved reports, then ECLAT association-rule mining to surface co-occurring risk conditions. Every candidate it produces still waits for a human. I wrote the ECLAT implementation myself; there isn't a maintained one for Python.
+
+→ 𝗧𝗵𝗲 𝘃𝗲𝗿𝗶𝗳𝗶𝗰𝗮𝘁𝗶𝗼𝗻 𝘀𝘁𝗼𝗿𝘆. One npm run verify gate: format, lint, typecheck, unit tests, script tests, secret scan. Rules and Cloud Function integration tests run against real emulators in CI. Four jobs, plus scheduled dependency advisories for npm and pip.
+
+→ 𝗧𝗵𝗲 𝗱𝗼𝗰𝘂𝗺𝗲𝗻𝘁 𝗜'𝗺 𝗽𝗿𝗼𝘂𝗱𝗲𝘀𝘁 𝗼𝗳. known-limitations.md — every claim the project can't support, every path never exercised against a real Google project, every platform limit I couldn't engineer around. Writing it was harder than writing the features. If you can't say what your project doesn't do, you don't really know what it does.
+
+Stack: Expo SDK 57 · React Native 0.86 · React 19 · TypeScript 6 (strict, plus noUncheckedIndexedAccess and exactOptionalPropertyTypes) · Next.js 16 · Firebase (Auth, Firestore, Storage, Cloud Functions) · Python 3.14 · FastAPI · scikit-learn.
+
+The whole system runs on the Firebase Emulator Suite. Six commands from clone to running app — no account, no API keys, no billing. If you'd rather run it than take my word for any of this, you can.
+
+Code, docs and a 24-second walkthrough: github.com/shreyuu/accident-black-spot-detection
+
+#ReactNative #TypeScript #Python #Firebase #RoadSafety #SoftwareEngineering #OpenToWork
