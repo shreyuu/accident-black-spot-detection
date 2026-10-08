@@ -19,7 +19,16 @@ __pycache__/
 # `.claude/` is no longer entirely untracked: `.claude/settings.json` and
 # `.claude/skills/graphify/` are committed (DEC-008). They are vendor- and
 # tool-generated all the same, and are not ours to reformat.
+#
+# `.agents/skills/graphify/` is the same skill, installed for Codex. It is
+# rewritten by `graphify install` on every upgrade, so formatting it would only
+# break the gate again on the next upgrade. `.remember/` is a local memory
+# plugin's store; it gitignores itself, but prettier only reads the root ignore
+# files, so it still fails the gate locally without this line.
 .claude/
+.agents/
+.codex/
+.remember/
 .vscode/
 .idea/
 .serena/
