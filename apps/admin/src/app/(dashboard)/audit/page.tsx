@@ -1,4 +1,7 @@
+import { redirect } from 'next/navigation';
+
 import { fetchAuditLog } from '@/lib/data';
+import { getDashboardActor } from '@/lib/session';
 
 /**
  * The audit trail.
@@ -10,8 +13,22 @@ import { fetchAuditLog } from '@/lib/data';
  * `firestore.rules` denies every client write to the collection, and the only
  * writer is the Admin SDK committing an entry in the same transaction as the
  * action it records. An audit log an administrator can tidy up is not an audit log.
+ *
+ * ## Why this page checks the actor although the layout already does
+ *
+ * Next renders from the first segment that differs from the router state the
+ * client sends, and that header is client-controlled: a request claiming the
+ * `(dashboard)` layout is already mounted gets this page rendered without the
+ * layout's redirect. Without this check the audit log — every operator's email —
+ * was readable with no session at all. `dashboardGuards.test.ts` holds every
+ * dashboard page to the same rule.
  */
 export default async function AuditPage() {
+  const actor = await getDashboardActor();
+  if (actor === null) {
+    redirect('/login');
+  }
+
   const entries = await fetchAuditLog();
 
   return (

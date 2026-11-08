@@ -23,7 +23,8 @@ import { getDashboardActor } from '@/lib/session';
  */
 export default async function ReportsPage() {
   const actor = await getDashboardActor();
-  // Unreachable: the group layout redirects first. Narrowing for the type system.
+  // Not merely narrowing: the layout's redirect can be skipped by a request that
+  // claims the layout is already mounted. See dashboardGuards.test.ts.
   if (actor === null) {
     return null;
   }
@@ -131,7 +132,7 @@ function ReportCard({ report }: { report: ReportRow }) {
         <p className="small">
           {report.imageUrls.map((url, index) => (
             <a
-              key={url}
+              key={`${index}-${url}`}
               href={url}
               target="_blank"
               rel="noreferrer noopener"

@@ -126,6 +126,9 @@ export const COLLECTIONS = {
   reportFingerprints: 'reportFingerprints',
   // Phase 12. Written only by the account-deletion Cloud Function.
   deletedAccounts: 'deletedAccounts',
+  // Per-account daily allowance on the billable Places proxy. Written only by
+  // `nearbyPlacesProxy` through the Admin SDK; no client access.
+  placesQuota: 'placesQuota',
 } as const;
 
 export type CollectionName = (typeof COLLECTIONS)[keyof typeof COLLECTIONS];

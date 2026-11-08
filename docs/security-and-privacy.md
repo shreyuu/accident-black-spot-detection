@@ -129,10 +129,12 @@ to the browser instead:
 `reviewedBy` — the deciding moderator's uid — was removed from the row for the
 same reason. It was rendered nowhere and rode into the page source anyway.
 
-Set `REPORTER_SALT` in a deployment. Unsalted, somebody holding a list of uids
-could confirm which of them filed a report by recomputing the hash. Then leave it
-alone: changing it renumbers every reporter and destroys the recognition the
-label exists for.
+Set `REPORTER_SALT` in a deployment — the dashboard refuses to start against a
+real project without one of at least 32 characters (`lib/serverConfig.ts`).
+Unsalted, or salted with the development default published in the repository,
+somebody holding a list of uids could confirm which of them filed a report by
+recomputing the hash. Then leave it alone: changing it renumbers every reporter
+and destroys the recognition the label exists for.
 
 ---
 
@@ -238,9 +240,14 @@ What is deliberately _not_ collected or kept:
 - **No continuous location history.** Alert logs record that a warning was shown
   and how far away the black spot was. Coordinates are permitted by the rules but
   the app does not write them.
-- **No image metadata.** Uploads set a content type and a cache header and
-  nothing else — no original filename (some cameras encode a timestamp and
-  sequence), no device model, no EXIF summary.
+- **No image metadata.** Every photo is re-encoded to JPEG on the device before
+  upload (`withoutMetadata` in `reportStorage.ts`), which drops the file's EXIF —
+  GPS position, capture time, device model. Until the audit this claim rested on
+  the picker's `exif: false`, which only stops EXIF being returned to JavaScript:
+  the uploaded file kept it (SECURITY_AUDIT.md M5). If the re-encode fails the
+  photo is refused rather than uploaded as-is. Uploads otherwise set a content
+  type and a cache header and nothing else — no original filename (some cameras
+  encode a timestamp and sequence).
 - **Coordinates are rounded to five decimal places** before leaving for a
   third-party place lookup, in the app and again in the proxy. A proxy that
   trusted its caller to have rounded would not be a privacy control.
@@ -285,7 +292,7 @@ Stated because a security document that only lists wins is not one.
 
 ---
 
-## 8. A verified email address, for report creation only
+## 8. A verified email address, for reporting and anything that costs
 
 The rate limit in §2 is exact, carefully coupled, and bounded by nothing scarce.
 It counts per **account**, and until this rule an account cost nothing: the Auth
@@ -321,7 +328,9 @@ without App Check or a paid identity provider. It is a floor, not a wall.
 
 ### Why the scope is this narrow
 
-This gates report creation and **nothing else**. Two deliberate exclusions:
+This gates report creation and the things that only make sense alongside it or
+that cost money — photo uploads (Storage rules), the billable Places proxy, and
+being granted a privileged role (`DEC-010`). Two deliberate exclusions:
 
 - **Emergency contacts and SOS.** Someone in an emergency must never be told to
   go and check their email first. There is also no abuse case: those writes

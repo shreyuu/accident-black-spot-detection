@@ -9,6 +9,7 @@ import {
   buildReportModerationWrite,
   canManageBlackSpots,
   canManageRoles,
+  canReceiveRole,
   COLLECTIONS,
   evaluateModerationDecision,
   findDisallowedModerationFields,
@@ -446,6 +447,20 @@ export async function setUserRole(formData: FormData): Promise<ActionResult> {
    */
   if (target.uid === actor.uid) {
     return { ok: false, message: 'You cannot change your own role. Ask another administrator.' };
+  }
+
+  /**
+   * A privileged role only for a verified address.
+   *
+   * The admin types an email, and sign-up accepts any address without proving
+   * it — so an unverified account under that address may belong to anyone who
+   * registered it first. See `canReceiveRole`. Demotion is never blocked.
+   */
+  if (!canReceiveRole(role, target.emailVerified)) {
+    return {
+      ok: false,
+      message: `${email} has not confirmed their email address yet. Ask them to use the link sent when they registered, then try again.`,
+    };
   }
 
   try {

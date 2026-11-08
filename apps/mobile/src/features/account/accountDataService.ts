@@ -1,5 +1,6 @@
 import { httpsCallable, type FunctionsError } from 'firebase/functions';
 
+import { confirmPassword, logout } from '@/features/auth/authService';
 import { getFirebaseFunctions } from '@/services/firebase/app';
 import { AppError } from '@/utils/errors';
 import { logger } from '@/utils/logger';
@@ -16,8 +17,9 @@ import { logger } from '@/utils/logger';
  *
  * This module is the app's whole surface onto those functions. It converts the
  * callable's error codes into `AppError`s the UI already knows how to render,
- * and it does nothing else: no confirmation, no navigation, no state. Those
- * belong to the screen.
+ * and — apart from `deleteAccountWithPassword`, which sequences the
+ * re-authentication and the local sign-out around the call — no navigation and
+ * no state. Those belong to the screen.
  */
 
 const DELETE_ACCOUNT = 'deleteAccount';
@@ -38,6 +40,18 @@ function toCallableError(error: unknown, operation: string): AppError {
 
   if (code.includes('unauthenticated')) {
     return new AppError('auth', 'Please sign in again and retry.', {
+      retryable: false,
+      cause: error,
+      technicalMessage: `${operation}: ${code}`,
+    });
+  }
+
+  // `deleteAccount` refuses a sign-in older than a few minutes, so an unlocked
+  // phone or a leaked token is not enough to erase an account. The screen
+  // re-confirms the password first, so this is reached only if that step was
+  // somehow skipped or took too long.
+  if (code.includes('failed-precondition')) {
+    return new AppError('auth', 'For your security, confirm your password and try again.', {
       retryable: false,
       cause: error,
       technicalMessage: `${operation}: ${code}`,
@@ -86,6 +100,36 @@ export async function deleteAccount(): Promise<AccountDeletionSummary> {
   } catch (error) {
     throw toCallableError(error, DELETE_ACCOUNT);
   }
+}
+
+/**
+ * The whole deletion flow, as the screen runs it.
+ *
+ * 1. **Re-confirm the password.** The function refuses a sign-in older than a
+ *    few minutes, and this is what makes the sign-in recent. A wrong password
+ *    stops here, before anything is deleted.
+ * 2. **Delete.**
+ * 3. **Sign out locally.** The Auth record is gone, but this device's ID token
+ *    stays valid for up to an hour — and until it is dropped, the draft queue
+ *    and the background task keep writing reports, photos and alert logs under
+ *    the deleted uid. Signing out is what fires `AuthProvider`'s cleanup. A
+ *    failure here does not undo a deletion that already happened, so it is not
+ *    reported as one.
+ */
+export async function deleteAccountWithPassword(password: string): Promise<AccountDeletionSummary> {
+  await confirmPassword(password);
+
+  const summary = await deleteAccount();
+
+  try {
+    await logout();
+  } catch (error) {
+    logger.warn('accountDataService', 'Local sign-out after deletion failed', {
+      error: error instanceof Error ? error.name : 'unknown',
+    });
+  }
+
+  return summary;
 }
 
 /**

@@ -170,6 +170,9 @@ export async function createIncidentReport(
           : serverTimestamp(),
       count: nextRateLimit.count,
       lastReportAt: serverTimestamp(),
+      // The report this increment pays for. The rules require it to equal the
+      // report id, so one increment cannot cover several reports in one commit.
+      lastReportId: reportId,
     });
 
     transaction.set(fingerprintRef, {

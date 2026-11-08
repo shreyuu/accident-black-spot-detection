@@ -10,9 +10,18 @@ one rather than in the client bundle.
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import Self
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+#: Tokens that appear in this repository's examples and docs. Anyone who has
+#: read the repository knows them.
+PUBLISHED_EXAMPLE_TOKENS = frozenset({"demo-token", "local-dev-token"})
+
+#: Shortest token accepted against a real project. 32 characters of
+#: ``secrets.token_urlsafe`` is about 190 bits — far past guessing.
+MIN_PRODUCTION_TOKEN_LENGTH = 32
 
 
 class Settings(BaseSettings):
@@ -53,6 +62,28 @@ class Settings(BaseSettings):
     @property
     def uses_emulator(self) -> bool:
         return self.firestore_emulator_host is not None
+
+    @model_validator(mode="after")
+    def _refuse_a_weak_token_against_a_real_project(self) -> Self:
+        """Refuse to start with a guessable token outside the emulator.
+
+        `.env.example` ships ``ANALYSIS_API_TOKEN=demo-token`` so the emulator
+        setup works as-is. Copied unchanged next to real credentials, that
+        published token would let anyone write candidates into the moderation
+        queue (SECURITY_AUDIT.md L4). Against the emulator it stays allowed: the
+        emulator holds nothing worth protecting and the default should just work.
+        """
+        token = self.analysis_api_token
+        if self.uses_emulator or token is None or token == "":
+            return self
+        if token in PUBLISHED_EXAMPLE_TOKENS or len(token) < MIN_PRODUCTION_TOKEN_LENGTH:
+            raise ValueError(
+                "ANALYSIS_API_TOKEN is the published example or shorter than "
+                f"{MIN_PRODUCTION_TOKEN_LENGTH} characters, and FIRESTORE_EMULATOR_HOST is "
+                "unset — this would protect a real project with a guessable token. Generate one "
+                'with: python -c "import secrets; print(secrets.token_urlsafe(32))"'
+            )
+        return self
 
 
 @lru_cache(maxsize=1)

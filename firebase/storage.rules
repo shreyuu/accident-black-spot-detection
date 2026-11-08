@@ -15,8 +15,12 @@ rules_version = '2';
 //
 //   1. Where a user may write — their own uid-scoped prefix, and nowhere else.
 //   2. What may be written — images only, from an allow-list of content types.
-//   3. How large — a hard size cap, so the bucket cannot be used as free storage
-//      or filled to exhaust the project's quota.
+//   3. How large — a hard size cap per object.
+//   4. Who — a verified email address, the same bar as filing a report. The
+//      size cap alone bounds an object, not an account; without this an
+//      unlimited supply of throwaway accounts could host files here via each
+//      object's token URL. Unverified accounts cannot file reports, so they
+//      lose no legitimate upload.
 // =============================================================================
 
 service firebase.storage {
@@ -24,6 +28,12 @@ service firebase.storage {
 
     function isSignedIn() {
       return request.auth != null;
+    }
+
+    // Mirrors `hasVerifiedEmail()` in firestore.rules. `.get(…, false)` so a
+    // token that never carried the claim reads as unverified, not as an error.
+    function hasVerifiedEmail() {
+      return isSignedIn() && request.auth.token.get('email_verified', false) == true;
     }
 
     // Mirrors MAX_IMAGE_BYTES in src/features/reports/reportSchemas.ts.
@@ -64,6 +74,7 @@ service firebase.storage {
       allow read: if isSignedIn() && request.auth.uid == userId;
 
       allow create: if isSignedIn()
+                    && hasVerifiedEmail()
                     && request.auth.uid == userId
                     && isAllowedImage()
                     && isWithinSizeLimit()

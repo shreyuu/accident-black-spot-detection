@@ -138,6 +138,10 @@ export FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099 FIRESTORE_EMULATOR_HOST=127.0.
 ```
 
 ```bash
+npm run confirm-email -- you@example.test   # roles need a verified address
+```
+
+```bash
 npm run grant-role -- you@example.test admin
 ```
 

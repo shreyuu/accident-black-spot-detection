@@ -57,8 +57,8 @@ export const SECRET_RULES = Object.freeze([
   },
   {
     id: 'github-token',
-    description: 'GitHub personal access / OAuth token.',
-    pattern: /gh[pousr]_[A-Za-z0-9]{36,}/g,
+    description: 'GitHub personal access / OAuth token, classic or fine-grained.',
+    pattern: /(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{50,})/g,
   },
   {
     id: 'slack-token',
@@ -67,8 +67,20 @@ export const SECRET_RULES = Object.freeze([
   },
   {
     id: 'openai-key',
-    description: 'OpenAI-style API key.',
-    pattern: /\bsk-[A-Za-z0-9]{32,}/g,
+    description: 'OpenAI-style API key, including project and service-account keys.',
+    // The prefixes carry a hyphen (`sk-proj-…`), which the old character class
+    // stopped at. Anthropic keys are excluded here and reported by their own rule.
+    pattern: /\bsk-(?!ant-)(?:proj-|svcacct-|admin-)?[A-Za-z0-9_-]{32,}/g,
+  },
+  {
+    id: 'anthropic-key',
+    description: 'Anthropic API key (sk-ant-…).',
+    pattern: /\bsk-ant-[A-Za-z0-9_-]{32,}/g,
+  },
+  {
+    id: 'stripe-live-key',
+    description: 'Stripe live secret or restricted key.',
+    pattern: /\b[sr]k_live_[A-Za-z0-9]{20,}/g,
   },
   {
     id: 'firebase-service-account',
@@ -228,6 +240,10 @@ const FORBIDDEN_TRACKED = [
   { pattern: /\.(jks|keystore|p8|p12|pem|mobileprovision)$/, reason: 'Signing material.' },
   { pattern: /(^|\/)google-services\.json$/, reason: 'Per-project Firebase Android config.' },
   { pattern: /(^|\/)GoogleService-Info\.plist$/, reason: 'Per-project Firebase iOS config.' },
+  {
+    pattern: /(^|\/)\.secret\.local$/,
+    reason: 'Cloud Functions emulator secrets — where the real Places key goes.',
+  },
 ];
 
 /**

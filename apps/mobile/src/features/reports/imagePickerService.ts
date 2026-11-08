@@ -94,10 +94,10 @@ export async function captureReportPhoto(): Promise<PickResult> {
       // Cropping is off: a report photograph is evidence, and an editing step
       // invites cropping out the context a moderator needs.
       allowsEditing: false,
-      // EXIF is deliberately not requested. It carries the precise GPS position
-      // and capture time of the original photo, which would attach a second,
-      // more precise location to a report that already has the one the user
-      // chose to share.
+      // EXIF is deliberately not requested. Note what this does NOT do: it only
+      // stops EXIF being returned to JavaScript — the file keeps its GPS
+      // position and capture time. The metadata is removed by re-encoding in
+      // `reportStorage.ts` before upload (SECURITY_AUDIT.md M5).
       exif: false,
     });
 

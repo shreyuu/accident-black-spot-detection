@@ -11,7 +11,7 @@ import {
   ErrorState,
   ScreenContainer,
 } from '@/components';
-import { deleteAccount, exportMyData } from '@/features/account/accountDataService';
+import { deleteAccountWithPassword, exportMyData } from '@/features/account/accountDataService';
 import { useTheme } from '@/theme';
 import { toAppError, type AppError } from '@/utils/errors';
 
@@ -136,11 +136,12 @@ function DeleteSection() {
   const theme = useTheme();
 
   const [confirmation, setConfirmation] = useState('');
+  const [password, setPassword] = useState('');
   const [showDialog, setShowDialog] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<AppError | null>(null);
 
-  const armed = confirmation.trim().toUpperCase() === CONFIRMATION_WORD;
+  const armed = confirmation.trim().toUpperCase() === CONFIRMATION_WORD && password.length > 0;
 
   async function handleDelete(): Promise<void> {
     setShowDialog(false);
@@ -148,10 +149,11 @@ function DeleteSection() {
     setError(null);
 
     try {
-      await deleteAccount();
-      // No navigation. Deleting the Auth record fires the SDK's auth state
-      // listener, and `AuthProvider` returns the app to sign-in on its own —
-      // pushing a route here would race that redirect.
+      // Re-confirms the password (the function refuses a stale sign-in), deletes,
+      // then signs out locally — see `deleteAccountWithPassword`. No navigation:
+      // the sign-out fires the auth state listener and `AuthProvider` returns the
+      // app to sign-in on its own; pushing a route here would race that redirect.
+      await deleteAccountWithPassword(password);
     } catch (caught) {
       setError(toAppError(caught));
       setBusy(false);
@@ -198,6 +200,25 @@ function DeleteSection() {
         accessibilityHint={`Type the word ${CONFIRMATION_WORD} to enable the delete button`}
       />
 
+      {/*
+        The password, not just the typed word. An irreversible operation should
+        need something an unlocked phone does not already give away, and the
+        server refuses a sign-in older than a few minutes regardless.
+      */}
+      <AppTextInput
+        label="Your password"
+        value={password}
+        onChangeText={setPassword}
+        secureTextEntry
+        autoCapitalize="none"
+        autoCorrect={false}
+        autoComplete="current-password"
+        textContentType="password"
+        editable={!busy}
+        testID="delete-password-input"
+        accessibilityHint="Enter your password to confirm it is you"
+      />
+
       <AppButton
         label="Delete my account"
         variant="danger"
@@ -212,7 +233,7 @@ function DeleteSection() {
         accessibilityHint={
           armed
             ? 'Asks you to confirm once more, then deletes your account'
-            : `Type ${CONFIRMATION_WORD} in the field above first`
+            : `Type ${CONFIRMATION_WORD} and your password in the fields above first`
         }
       />
 

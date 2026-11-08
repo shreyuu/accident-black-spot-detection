@@ -48,8 +48,10 @@ the README so it can grow without pushing the setup instructions off the page.
   report document is written, so abandoning the form after choosing a photo leaves an unreferenced
   object. That ordering is deliberate — a report must never reference photographs that never
   arrived — and the `sweepOrphanedImages` scheduled function removes anything unreferenced for more
-  than 24 hours. The grace period is generous on purpose: deleting an object from a submission still
-  being typed would strip evidence from a live report.
+  than 15 days. The grace period is longer than the app's 14-day offline draft queue on purpose: a
+  queued draft keeps its already-uploaded photos and does not re-upload them, so deleting them sooner
+  would strip evidence from a report the user has yet to send. The cost is that an abandoned upload
+  lingers for up to 15 days.
 - **The scheduled sweep does not run in the local emulator.** It needs the Pub/Sub emulator, which
   `npm run emulators` does not start; the emulator logs `function ignored`. Its decision logic is
   pure and unit-tested (`functions/src/orphanSweep.ts`), but the scheduled trigger itself has only

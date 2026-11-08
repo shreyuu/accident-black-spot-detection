@@ -9,11 +9,12 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import TypedDict
 
 from fastapi import FastAPI
 
 from app.api.routes import router
-from app.config import get_settings
+from app.config import Settings, get_settings
 from app.models.domain import ALGORITHM_VERSION
 from app.utils.logging import configure_logging, get_logger
 
@@ -32,6 +33,25 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     yield
 
 
+class DocsUrls(TypedDict):
+    docs_url: str | None
+    redoc_url: str | None
+    openapi_url: str | None
+
+
+def docs_urls(settings: Settings) -> DocsUrls:
+    """Where the interactive docs and schema are served — only on the emulator.
+
+    The OpenAPI schema is an unauthenticated map of every endpoint and
+    parameter. Useful while developing; a deployment has no reader for it.
+    """
+    if settings.uses_emulator:
+        return {"docs_url": "/docs", "redoc_url": "/redoc", "openapi_url": "/openapi.json"}
+    return {"docs_url": None, "redoc_url": None, "openapi_url": None}
+
+
+_DOCS = docs_urls(get_settings())
+
 app = FastAPI(
     title="Accident Black Spot Analytics",
     version=ALGORITHM_VERSION,
@@ -41,6 +61,9 @@ app = FastAPI(
         "administrator must review and publish each one."
     ),
     lifespan=lifespan,
+    docs_url=_DOCS["docs_url"],
+    redoc_url=_DOCS["redoc_url"],
+    openapi_url=_DOCS["openapi_url"],
 )
 
 app.include_router(router)

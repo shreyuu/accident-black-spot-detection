@@ -340,3 +340,50 @@ describe('deleteAccount', () => {
     assert.equal(await accountExists(theirs.uid), true);
   });
 });
+
+/**
+ * The same token with its `auth_time` pushed into the past.
+ *
+ * Auth-emulator ID tokens are unsigned (`alg: none`) and the Functions emulator
+ * accepts them as such, which is what lets a test stand in for "a token that is
+ * still valid but whose sign-in is an hour old" — exactly the token an unlocked
+ * phone or a leaked log line would carry.
+ */
+function withAuthTime(idToken, authTimeSeconds) {
+  const [header, payload] = idToken.split('.');
+  const claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+  const altered = Buffer.from(JSON.stringify({ ...claims, auth_time: authTimeSeconds })).toString(
+    'base64url',
+  );
+  return `${header}.${altered}.`;
+}
+
+describe('deleteAccount needs a recent sign-in (SECURITY_AUDIT.md L6)', () => {
+  it('refuses a valid token whose sign-in is an hour old, and deletes nothing', async () => {
+    const account = await createAccount(`stale-${Date.now()}@example.test`);
+    await seedAccountData(account.uid);
+
+    const stale = withAuthTime(account.idToken, Math.floor(Date.now() / 1000) - 60 * 60);
+    const { body } = await callFunction('deleteAccount', stale);
+
+    assert.equal(body.error?.status, 'FAILED_PRECONDITION');
+    assert.equal(await accountExists(account.uid), true);
+    assert.equal((await readDoc(`users/${account.uid}`)).exists, true);
+  });
+});
+
+describe('nearbyPlacesProxy needs a verified email (SECURITY_AUDIT.md M3)', () => {
+  it('refuses an account that has not confirmed its address, before any billable call', async () => {
+    const account = await createAccount(`unverified-${Date.now()}@example.test`);
+
+    const { body } = await callFunction('nearbyPlacesProxy', account.idToken, {
+      latitude: 51.5,
+      longitude: -0.12,
+      radiusM: 2000,
+      includedTypes: ['hospital'],
+    });
+
+    assert.equal(body.error?.status, 'PERMISSION_DENIED');
+    assert.equal((await readDoc(`placesQuota/${account.uid}`)).exists, false);
+  });
+});

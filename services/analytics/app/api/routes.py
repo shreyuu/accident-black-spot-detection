@@ -39,7 +39,10 @@ def require_token(
     posture, and it means a misconfigured deployment is inert rather than open.
 
     Compared with ``secrets.compare_digest`` so the comparison does not leak the
-    token's length or contents through timing.
+    token's length or contents through timing — as **bytes**, because on a
+    ``str`` it raises for any non-ASCII character, which turned a garbage header
+    into a 500 rather than a 401. The scheme is matched case-insensitively, as
+    RFC 9110 specifies.
     """
     expected = settings.analysis_api_token
     if expected is None or expected == "":
@@ -49,10 +52,12 @@ def require_token(
         )
 
     supplied = ""
-    if authorization is not None and authorization.startswith("Bearer "):
-        supplied = authorization.removeprefix("Bearer ").strip()
+    if authorization is not None:
+        scheme, _, credentials = authorization.partition(" ")
+        if scheme.lower() == "bearer":
+            supplied = credentials.strip()
 
-    if not secrets.compare_digest(supplied, expected):
+    if not secrets.compare_digest(supplied.encode("utf-8"), expected.encode("utf-8")):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or missing bearer token.",

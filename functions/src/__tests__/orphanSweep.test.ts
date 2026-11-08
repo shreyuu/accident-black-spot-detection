@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
+import { DRAFT_MAX_AGE_MS } from '@accident-black-spot-detection/shared-types';
+
 import {
   ORPHAN_GRACE_PERIOD_HOURS,
   ownerOfObject,
@@ -61,7 +63,7 @@ describe('planOrphanSweep', () => {
   });
 
   it('recognises a reference whether the URL encodes the path or contains it plainly', () => {
-    const target = object('incidentReports/uid1/e.jpg', 100);
+    const target = object('incidentReports/uid1/e.jpg', ORPHAN_GRACE_PERIOD_HOURS + 100);
 
     for (const url of [downloadUrl(target.path), `http://localhost:9199/${target.path}`]) {
       const result = planOrphanSweep({ objects: [target], referencedUrls: [url], nowMs: NOW });
@@ -70,8 +72,8 @@ describe('planOrphanSweep', () => {
   });
 
   it('does not treat one user’s reference as covering another user’s object', () => {
-    const mine = object('incidentReports/uid1/f.jpg', 100);
-    const theirs = object('incidentReports/uid2/f.jpg', 100);
+    const mine = object('incidentReports/uid1/f.jpg', ORPHAN_GRACE_PERIOD_HOURS + 100);
+    const theirs = object('incidentReports/uid2/f.jpg', ORPHAN_GRACE_PERIOD_HOURS + 100);
 
     const result = planOrphanSweep({
       objects: [mine, theirs],
@@ -100,8 +102,8 @@ describe('planOrphanSweep', () => {
 
   it('partitions every object exactly once', () => {
     const objects = [
-      object('incidentReports/uid1/h.jpg', 100),
-      object('incidentReports/uid1/i.jpg', 100),
+      object('incidentReports/uid1/h.jpg', ORPHAN_GRACE_PERIOD_HOURS + 100),
+      object('incidentReports/uid1/i.jpg', ORPHAN_GRACE_PERIOD_HOURS + 100),
       object('incidentReports/uid1/j.jpg', 1),
     ];
 
@@ -135,5 +137,69 @@ describe('ownerOfObject', () => {
     ]) {
       assert.equal(ownerOfObject(path), null, `should refuse: ${path}`);
     }
+  });
+});
+
+describe('the grace period and the offline draft queue', () => {
+  /**
+   * A draft that failed to submit keeps its photos' download URLs and never
+   * re-uploads them, for up to DRAFT_MAX_AGE_MS. A sweep that deleted
+   * unreferenced objects sooner than that destroyed the evidence of a report
+   * the user would still go on to submit — retried on day two, the report
+   * pointed at photographs that no longer existed.
+   */
+  it('outlasts the longest a draft can wait, with margin', () => {
+    assert.ok(
+      ORPHAN_GRACE_PERIOD_HOURS * HOUR > DRAFT_MAX_AGE_MS,
+      `grace ${ORPHAN_GRACE_PERIOD_HOURS}h must exceed the ${DRAFT_MAX_AGE_MS / HOUR}h draft lifetime`,
+    );
+  });
+
+  it('spares the photos of a draft queued three days ago', () => {
+    const queued = object('incidentReports/uid1/queued.jpg', 72);
+    const result = planOrphanSweep({ objects: [queued], referencedUrls: [], nowMs: NOW });
+
+    assert.deepEqual(result.orphaned, []);
+    assert.deepEqual(result.tooRecent, [queued]);
+  });
+});
+
+describe('a reference names exactly one object', () => {
+  // Matching by substring let one long `imageUrls` entry carry any number of
+  // object paths, each of which the sweep then treated as referenced — a way
+  // to keep arbitrary uploads alive for ever.
+  it('does not count object paths smuggled into the query string', () => {
+    const named = object('incidentReports/uid1/named.jpg', 1000);
+    const smuggled = object('incidentReports/uid1/smuggled.jpg', 1000);
+    const packed = `${downloadUrl(named.path)}&x=${encodeURIComponent(smuggled.path)}${smuggled.path}`;
+
+    const result = planOrphanSweep({
+      objects: [named, smuggled],
+      referencedUrls: [packed],
+      nowMs: NOW,
+    });
+
+    assert.deepEqual(result.referenced, [named]);
+    assert.deepEqual(result.orphaned, [smuggled]);
+  });
+
+  it('does not count a path concatenated onto another inside the object segment', () => {
+    const smuggled = object('incidentReports/uid1/keep.jpg', 1000);
+    const url = downloadUrl(`incidentReports/uid1/a.jpg${smuggled.path}`);
+
+    const result = planOrphanSweep({ objects: [smuggled], referencedUrls: [url], nowMs: NOW });
+
+    assert.deepEqual(result.orphaned, [smuggled]);
+  });
+
+  it('ignores a string that is not a URL at all', () => {
+    const target = object('incidentReports/uid1/x.jpg', 1000);
+    const result = planOrphanSweep({
+      objects: [target],
+      referencedUrls: [`not a url ${target.path}`],
+      nowMs: NOW,
+    });
+
+    assert.deepEqual(result.orphaned, [target]);
   });
 });

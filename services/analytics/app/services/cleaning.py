@@ -77,6 +77,9 @@ def _is_duplicate_of(candidate: IncidentReport, kept: IncidentReport) -> bool:
     """
     if candidate.reporter_id != kept.reporter_id:
         return False
+    # The same marker is not the same person: every erased account shares it.
+    if not candidate.has_known_reporter:
+        return False
     if candidate.type is not kept.type:
         return False
 

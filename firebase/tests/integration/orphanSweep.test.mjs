@@ -29,7 +29,8 @@ import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
  *
  * ## Why the clock is moved rather than the objects backdated
  *
- * An object is spared for 24 hours after creation. The Storage emulator sets
+ * An object is spared for `ORPHAN_GRACE_PERIOD_HOURS` after creation — longer
+ * than the app keeps an offline draft (SECURITY_AUDIT.md M4). The Storage emulator sets
  * `timeCreated` itself and offers no way to write it, so the only way to see a
  * deletion is to ask the sweep to reason about a later instant.
  */
@@ -50,6 +51,10 @@ process.env.FIREBASE_STORAGE_EMULATOR_HOST ??= STORAGE_HOST;
 // `node --test` with no transform, and `functions/lib` is what actually gets
 // deployed. `npm run test:functions:ci` builds it first.
 const { runOrphanSweep } = await import('../../../functions/lib/sweepOrphanedImages.js');
+const { ORPHAN_GRACE_PERIOD_HOURS } = await import('../../../functions/lib/orphanSweep.js');
+
+/** An instant safely past the grace period for an object created now. */
+const pastGrace = () => Date.now() + (ORPHAN_GRACE_PERIOD_HOURS + 24) * HOUR_MS;
 
 let env;
 
@@ -141,7 +146,7 @@ describe('runOrphanSweep', () => {
     const orphan = 'incidentReports/user-1/orphan.jpg';
     await uploadObject(orphan);
 
-    const outcome = await runOrphanSweep(Date.now() + 48 * HOUR_MS);
+    const outcome = await runOrphanSweep(pastGrace());
 
     assert.equal(outcome.aborted, false);
     assert.equal(outcome.scanned, 1);
@@ -154,7 +159,7 @@ describe('runOrphanSweep', () => {
     await uploadObject(referenced);
     await seedReport('report-1', [downloadUrl(referenced)]);
 
-    const outcome = await runOrphanSweep(Date.now() + 365 * 24 * HOUR_MS);
+    const outcome = await runOrphanSweep(Date.now() + 10 * ORPHAN_GRACE_PERIOD_HOURS * HOUR_MS);
 
     assert.equal(outcome.referenced, 1);
     assert.equal(outcome.deleted, 0);
@@ -181,7 +186,7 @@ describe('runOrphanSweep', () => {
     await uploadObject(referenced);
     await seedReport('report-1', [downloadUrl(referenced)]);
 
-    const outcome = await runOrphanSweep(Date.now() + 48 * HOUR_MS);
+    const outcome = await runOrphanSweep(pastGrace());
 
     assert.equal(outcome.scanned, 2);
     assert.equal(outcome.referenced, 1);

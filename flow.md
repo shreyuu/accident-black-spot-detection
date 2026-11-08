@@ -314,6 +314,8 @@ useSubmitReport()                       src/features/reports/useSubmitReport.ts
 submitIncidentReport(input)             src/features/reports/submitIncidentReport.ts
         ├── buildIncidentReportPayload() src/features/reports/reportDocument.ts   (pure)
         ├── uploadReportImage(…)         src/features/reports/reportStorage.ts
+        │        ├── withoutMetadata(uri) — re-encode to JPEG (expo-image-manipulator),
+        │        │   dropping EXIF/GPS; fails closed, never uploads the original
         │        └── Firebase Storage  incidentReports/{uid}/{file}
         │           progress · cancel · retry; maxUploadRetryTime 45 s
         └── createIncidentReport(reportId, { …payload, imageUrls })
@@ -330,7 +332,10 @@ submitIncidentReport(input)             src/features/reports/submitIncidentRepor
                  hasServerTimestamps(…)
                  getAfter(rateLimit).lastReportAt == request.time
                  getAfter(rateLimit).count <= 10
+                 getAfter(rateLimit).lastReportId == reportId   ← one increment, one report
                  getAfter(fingerprint).reportId == reportId
+                 field checks: occurredAt within [-365 d, +5 min], geohash
+                 alphabet, imageUrls own Storage download URLs only
 ```
 
 The `getAfter` coupling is what makes the rate limit binding: it reads the
@@ -398,10 +403,19 @@ outage degrades instead of breaking.
 `functions/src/index.ts` exports four:
 
 ```
-deleteAccount        callable  → deletionPolicy.ts (pure) → cascade delete across
-                                 4 collections + Auth record + Storage prefix
+deleteAccount        callable  → isRecentSignIn(auth_time) — ≤ 5 min, else
+                                 failed-precondition
+                               → deletionPolicy.ts (pure) → cascade delete, report
+                                 writes in batches of 400 (inBatches), counters +
+                                 placesQuota + Auth record + Storage prefix
 exportMyData         callable  → exportPayload.ts (pure) → one JSON document
-nearbyPlacesProxy    callable  → Google Places, keeping the API key server-side
+nearbyPlacesProxy    callable  → email_verified, else permission-denied
+                               → normaliseProxyRequest() (numbers only, radius ≥ 1)
+                               → spendPlacesQuota(uid): transaction on
+                                 placesQuota/{uid}, evaluatePlacesQuota() (pure,
+                                 placesQuota.ts) — resource-exhausted when spent
+                               → Google Places, keeping the API key server-side
+                                 (maxInstances 10)
 sweepOrphanedImages  scheduled → runOrphanSweep()          ← DEC-005
 ```
 
@@ -415,7 +429,8 @@ runOrphanSweep(nowMs = Date.now())      functions/src/sweepOrphanedImages.ts
         │        └── failure ⇒ { aborted: true }, deletes NOTHING
         ├── adminBucket().getFiles({ prefix: 'incidentReports/' })
         ├── planOrphanSweep({ objects, referencedUrls, nowMs })   (pure)
-        │        └── functions/src/orphanSweep.ts — 24 h grace period
+        │        └── functions/src/orphanSweep.ts — 15-day grace period
+        │            (> DRAFT_MAX_AGE_MS; each URL parsed to exactly one path)
         └── bucket.file(path).delete() for each orphan
         ↓
 OrphanSweepOutcome { scanned, referenced, withinGracePeriod, deleted, aborted }

@@ -1,14 +1,31 @@
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 
-import { isUserRole, canAccessDashboard } from '@accident-black-spot-detection/shared-types';
-
 import { serverEnv } from '@/lib/env';
 import { getAdminAuth } from '@/lib/firebaseAdmin';
 import { SESSION_COOKIE, sessionCookieOptions } from '@/lib/session';
+import { evaluateSessionRequest, type SessionRefusal } from '@/lib/sessionPolicy';
 
-/** How recently the operator must have authenticated to be given a session cookie. */
-const MAX_AUTH_AGE_MS = 5 * 60 * 1000;
+/**
+ * What the operator is told for each refusal, and with which status.
+ *
+ * Deliberately explicit about *why*, unlike a failed sign-in. None of these is
+ * an authentication failure, and saying "wrong password" would be a lie that
+ * sends someone to reset a working one. There is nothing an attacker learns here
+ * that they did not already know from having valid credentials.
+ */
+const REFUSALS: Record<SessionRefusal, { status: number; error: string }> = {
+  'email-unverified': {
+    status: 403,
+    error:
+      'Confirm your email address before signing in to the dashboard — use the link sent when you registered.',
+  },
+  'not-staff': {
+    status: 403,
+    error: 'This account does not have moderator access. Ask an administrator to grant it.',
+  },
+  'stale-sign-in': { status: 401, error: 'That sign-in is too old. Please sign in again.' },
+};
 
 /**
  * Exchange a Firebase ID token for the dashboard's session cookie.
@@ -61,41 +78,16 @@ export async function POST(request: Request): Promise<NextResponse> {
 
   try {
     const decoded = await getAdminAuth().verifyIdToken(idToken, true);
-    const role = isUserRole(decoded.role) ? decoded.role : 'user';
 
-    if (!canAccessDashboard(role)) {
-      /**
-       * Deliberately explicit about *why*, unlike a failed sign-in.
-       *
-       * This is not an authentication failure and saying "wrong password" would
-       * be a lie that sends someone to reset a working one. There is nothing an
-       * attacker learns here that they did not already know from having valid
-       * credentials.
-       */
-      return NextResponse.json(
-        {
-          error: 'This account does not have moderator access. Ask an administrator to grant it.',
-        },
-        { status: 403 },
-      );
+    // Role, verified email and freshness — see `lib/sessionPolicy.ts`. A role
+    // claim on an account whose address was never verified is not trusted: the
+    // role was granted by typing an address nobody proved belonged to them.
+    const decision = evaluateSessionRequest(decoded, Date.now());
+    if (!decision.ok) {
+      const refusal = REFUSALS[decision.reason];
+      return NextResponse.json({ error: refusal.error }, { status: refusal.status });
     }
-
-    /**
-     * Refuse an ID token that is not fresh.
-     *
-     * `createSessionCookie` accepts a token up to an hour old, which would let a
-     * stolen token be traded for a long-lived credential well after the theft.
-     * Requiring a recent sign-in narrows that window to minutes. The client
-     * always calls `getIdToken()` immediately after authenticating, so a
-     * legitimate sign-in is never anywhere near this bound.
-     */
-    const authTimeMs = decoded.auth_time * 1000;
-    if (Date.now() - authTimeMs > MAX_AUTH_AGE_MS) {
-      return NextResponse.json(
-        { error: 'That sign-in is too old. Please sign in again.' },
-        { status: 401 },
-      );
-    }
+    const { role } = decision;
 
     const expiresIn = serverEnv.sessionMaxAgeSeconds * 1000;
     const sessionCookie = await getAdminAuth().createSessionCookie(idToken, { expiresIn });

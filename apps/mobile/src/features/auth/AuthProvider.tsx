@@ -4,15 +4,10 @@ import type { ReactNode } from 'react';
 
 import {
   buildBackgroundAlertSnapshot,
-  clearBackgroundAlertSnapshot,
   saveBackgroundAlertSnapshot,
 } from '@/features/alerts/backgroundAlertSnapshot';
-import { clearBackgroundRunHealth } from '@/features/alerts/backgroundRunHealthStore';
-import { clearZoneStates } from '@/features/alerts/zoneStateStore';
-import { clearDrafts } from '@/features/reports/draftStore';
-import { clearPreferences } from '@/features/settings/preferenceStore';
 import { subscribeToAuthState } from '@/features/auth/authService';
-import { stopBackgroundMonitoring } from '@/features/location/backgroundLocationService';
+import { clearDeviceDataForSignOut } from '@/features/auth/signOutCleanup';
 import { createUserProfile, getUserProfile } from '@/services/firebase/userProfileRepository';
 import type { UserProfile } from '@/types/domain';
 import { toAppError, type AppError } from '@/utils/errors';
@@ -102,24 +97,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setProfile(null);
         setProfileError(null);
         setStatus('unauthenticated');
-        // Sign-out has to reach everything this account left on the device.
-        //
-        // The background task runs headless off its own snapshot, so leaving
-        // that behind would mean the next person inherits the previous user's
-        // warnings and their alert-log attribution. Drafts are the sharper
-        // case: an unsent draft is somebody's private account of an incident,
-        // and leaving it would let the next person read it — or submit it under
-        // their own name.
-        void (async () => {
-          await stopBackgroundMonitoring();
-          await Promise.all([
-            clearBackgroundAlertSnapshot(),
-            clearZoneStates(),
-            clearBackgroundRunHealth(),
-            clearPreferences(),
-            clearDrafts(),
-          ]);
-        })();
+        // Sign-out has to reach everything this account left on the device —
+        // see `clearDeviceDataForSignOut` for what that is and why.
+        void clearDeviceDataForSignOut();
         return;
       }
 

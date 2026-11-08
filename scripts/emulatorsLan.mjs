@@ -39,6 +39,8 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { secretsBlockingLanMode } from './lanSafety.mjs';
+
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const SOURCE_CONFIG = resolve(repoRoot, 'firebase.json');
 const GENERATED_CONFIG = resolve(repoRoot, '.firebase-lan.json');
@@ -85,6 +87,19 @@ function generateConfig() {
 }
 
 function main() {
+  // The "demo data only" promise below is false once a real key is loaded: the
+  // Functions emulator would serve it to the whole network (SECURITY_AUDIT.md L8).
+  const blocking = secretsBlockingLanMode(repoRoot);
+  if (blocking.length > 0) {
+    process.stderr.write(
+      `\nRefusing to expose the emulators on the network: ${blocking.join(', ')} exists, so the\n` +
+        'Functions emulator would serve a real credential to anything on this Wi-Fi.\n' +
+        'Move it aside while testing on a device, or use `npm run emulators` (loopback only).\n\n',
+    );
+    process.exitCode = 1;
+    return;
+  }
+
   generateConfig();
 
   const addresses = lanAddresses();

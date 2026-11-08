@@ -178,3 +178,35 @@ test('forbidden tracked paths catch real env files while allowing the examples',
     ],
   );
 });
+
+// ---------------------------------------------------------------------------
+// Shapes the scanner used to miss (SECURITY_AUDIT.md L11). Each literal is
+// assembled from a repeated block so it matches the shape and is not a key.
+// ---------------------------------------------------------------------------
+
+function ruleIdsIn(text) {
+  return findSecrets('src/config.ts', text).map((finding) => finding.ruleId);
+}
+
+test('detects an OpenAI project key, whose prefix carries a hyphen', () => {
+  assert.deepEqual(ruleIdsIn(`const k = 'sk-proj-${'A1b2C3d4'.repeat(6)}';`), ['openai-key']);
+});
+
+test('detects an Anthropic key, and does not also report it as OpenAI', () => {
+  assert.deepEqual(ruleIdsIn(`const k = 'sk-ant-api03-${'Q7w8E9r0'.repeat(8)}';`), [
+    'anthropic-key',
+  ]);
+});
+
+test('detects a GitHub fine-grained personal access token', () => {
+  assert.deepEqual(ruleIdsIn(`const t = 'github_pat_${'K9m8N7b6'.repeat(10)}';`), ['github-token']);
+});
+
+test('detects a Stripe live secret key', () => {
+  assert.deepEqual(ruleIdsIn(`const s = 'sk_live_${'Z1x2C3v4'.repeat(4)}';`), ['stripe-live-key']);
+});
+
+test('refuses a tracked functions/.secret.local, where real API keys live', () => {
+  const violations = findForbiddenTrackedPaths(['functions/.secret.local']);
+  assert.equal(violations.length, 1);
+});

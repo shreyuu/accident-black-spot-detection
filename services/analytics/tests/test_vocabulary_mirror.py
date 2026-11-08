@@ -25,6 +25,7 @@ from app.models.domain import (
     BLACK_SPOT_RADIUS_MIN_M,
     COLLECTION_BLACK_SPOTS,
     COLLECTION_INCIDENT_REPORTS,
+    DELETED_REPORTER_MARKER,
     BlackSpotCategory,
     BlackSpotSource,
     IncidentSeverity,
@@ -117,3 +118,14 @@ class TestConstantsMatch:
 
         assert match is not None, f"collection {key} not found"
         assert python_value == match.group(1)
+
+
+def test_deleted_reporter_marker_matches_the_deletion_function() -> None:
+    """The marker account deletion writes is the one cleaning refuses to merge."""
+    deletion_policy = (
+        Path(__file__).resolve().parents[3] / "functions" / "src" / "deletionPolicy.ts"
+    ).read_text(encoding="utf-8")
+
+    match = re.search(r"DELETED_REPORTER_MARKER = '([^']+)'", deletion_policy)
+    assert match is not None
+    assert match.group(1) == DELETED_REPORTER_MARKER

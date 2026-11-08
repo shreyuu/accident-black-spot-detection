@@ -196,7 +196,10 @@ service cloud.firestore {
              && data.email is string
              && data.email.size() <= 320
              // Optional phone: present or absent, but must be a string if set.
-             && (!data.keys().hasAny(['phone']) || data.phone is string)
+             // Bounded like the emergency-contact phone below — unbounded, it
+             // was a megabyte of free storage per account.
+             && (!data.keys().hasAny(['phone'])
+                 || (data.phone is string && data.phone.size() <= 20))
              && data.alertRadiusM is int
              // Mirrors the client-side bounds in src/config/env.ts. Validating
              // server-side too means a tampered client cannot store a radius
@@ -338,10 +341,52 @@ service cloud.firestore {
              // so a short geohash is refused rather than producing an error.
              && data.geohash.size() >= 7
              && data.geohash.size() <= 22
+             // The base32 geohash alphabet (no a, i, l, o). Free text here let a
+             // client mint a fresh duplicate fingerprint for every submission
+             // from the same spot, because the fingerprint id slices this field.
+             // This does not bind the cell to the coordinates — rules cannot
+             // compute a geohash — so a client can still name a neighbouring
+             // cell; the analytics dedupe works on real distances.
+             && data.geohash.matches('^[0-9b-hjkmnp-z]+$')
              && data.imageUrls is list
              // Mirrors MAX_IMAGES_PER_REPORT.
              && data.imageUrls.size() <= 3
-             && (!data.keys().hasAny(['occurredAt']) || data.occurredAt is timestamp);
+             && data.imageUrls.toSet().size() == data.imageUrls.size()
+             && (data.imageUrls.size() < 1 || isOwnReportImageUrl(data.imageUrls[0]))
+             && (data.imageUrls.size() < 2 || isOwnReportImageUrl(data.imageUrls[1]))
+             && (data.imageUrls.size() < 3 || isOwnReportImageUrl(data.imageUrls[2]))
+             // Mirrors MAX_OCCURRED_AGE_MS / OCCURRED_FUTURE_TOLERANCE_MS in
+             // src/features/reports/reportSchemas.ts. Until this existed only
+             // the app enforced them, and the analytics service prefers
+             // `occurredAt` over `createdAt` — a far-future date pinned a
+             // report's recency weight at its maximum for ever.
+             && (!data.keys().hasAny(['occurredAt'])
+                 || (data.occurredAt is timestamp
+                     && data.occurredAt <= request.time + duration.value(5, 'm')
+                     && data.occurredAt >= request.time - duration.value(365, 'd')));
+    }
+
+    // A download URL for an object in the caller's own report folder, of the
+    // exact shape `getDownloadURL()` returns. The dashboard renders these as
+    // links for a moderator to open, and the orphan sweep keeps any object a
+    // report references — so an unchecked string was both a phishing link shown
+    // to staff and a way to keep arbitrary uploads alive for ever.
+    //
+    // The http origins are the Storage emulator, reached from a simulator, an
+    // Android emulator or a device on the developer's LAN. Production writes
+    // carry the googleapis origin; a private-address link is no use to a
+    // phisher, and the dashboard additionally filters what it renders.
+    function isOwnReportImageUrl(url) {
+      return url is string
+             && url.size() <= 512
+             && url.matches(
+                  '^(https://firebasestorage[.]googleapis[.]com'
+                  + '|http://(localhost|127[.]0[.]0[.]1|10[.]0[.]2[.]2'
+                  + '|192[.]168[.][0-9]{1,3}[.][0-9]{1,3}'
+                  + '|10[.][0-9]{1,3}[.][0-9]{1,3}[.][0-9]{1,3}):9199)'
+                  + '/v0/b/[A-Za-z0-9._-]+/o/incidentReports%2F' + request.auth.uid
+                  + '%2F[A-Za-z0-9._-]+[?]alt=media&token=[A-Za-z0-9-]+$'
+                );
     }
 
     // -------------------------------------------------------------------------
@@ -376,7 +421,15 @@ service cloud.firestore {
       // capability anyone needs. This is the rule behind the phase gate
       // "reporter identity is private" — there is no query any signed-in user
       // can run that returns another person's `reporterId`.
-      allow get, list: if isSignedIn() && resource.data.reporterId == request.auth.uid;
+      //
+      // `get` also allows an id that does not exist yet. The submit transaction
+      // reads its reserved id first, to recognise a retry whose first attempt
+      // committed; for a new id `resource` is null, and dereferencing it errored
+      // — denying the read and with it every new submission. Ids are random
+      // auto-ids, so "this id is free" tells a caller nothing.
+      allow get: if isSignedIn()
+                 && (resource == null || resource.data.reporterId == request.auth.uid);
+      allow list: if isSignedIn() && resource.data.reporterId == request.auth.uid;
 
       allow create: if isSignedIn()
                     // See `hasVerifiedEmail`. This is the only place in the file
@@ -404,6 +457,12 @@ service cloud.firestore {
                     // place fails closed rather than opening a gap.
                     && isServerTime(rateLimitAfter().lastReportAt)
                     && rateLimitAfter().count <= 10
+                    // ...and was written for *this* report. Without it, one
+                    // commit could carry one increment and several reports —
+                    // each with its own fingerprint — and every one of them saw
+                    // the same fresh counter. The fingerprint's `reportId` below
+                    // binds the duplicate check the same way.
+                    && rateLimitAfter().lastReportId == reportId
 
                     // ----- Duplicate detection -----------------------------
                     // The fingerprint must be claimed by *this* report. A second
@@ -469,9 +528,12 @@ service cloud.firestore {
     // build rather than silently changing the limit.
 
     function isValidRateLimitShape(data) {
-      return data.keys().hasOnly(['userId', 'windowStartAt', 'count', 'lastReportAt'])
-             && data.keys().hasAll(['userId', 'windowStartAt', 'count', 'lastReportAt'])
+      return data.keys().hasOnly(['userId', 'windowStartAt', 'count', 'lastReportAt', 'lastReportId'])
+             && data.keys().hasAll(['userId', 'windowStartAt', 'count', 'lastReportAt', 'lastReportId'])
              && data.userId == request.auth.uid
+             && data.lastReportId is string
+             && data.lastReportId.size() > 0
+             && data.lastReportId.size() <= 128
              && data.count is int
              && data.count >= 1
              && data.windowStartAt is timestamp
@@ -794,6 +856,17 @@ service cloud.firestore {
     // location — a deletion record that identified the person would defeat the
     // deletion. See functions/src/deleteAccount.ts.
     match /deletedAccounts/{tombstoneId} {
+      allow read, write: if false;
+    }
+
+    // -------------------------------------------------------------------------
+    // placesQuota/{userId}   (SECURITY_AUDIT.md M3)
+    // -------------------------------------------------------------------------
+    // The per-account daily allowance on the billable Places proxy, counted and
+    // written only by `nearbyPlacesProxy` through the Admin SDK. Closed to every
+    // client: an allowance the user could write is not an allowance, and a
+    // readable one would only tell a script how far it had got.
+    match /placesQuota/{userId} {
       allow read, write: if false;
     }
 

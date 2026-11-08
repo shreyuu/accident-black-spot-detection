@@ -471,6 +471,7 @@ describe('a transaction satisfies the coupling, which is what the app actually u
           windowStartAt: existing.exists ? existing.data().windowStartAt : serverTimestamp(),
           count: existing.exists ? existing.data().count + 1 : 1,
           lastReportAt: serverTimestamp(),
+          lastReportId: reportId,
         });
       }
 
@@ -518,5 +519,139 @@ describe('the limit documents are private', () => {
 
   it('refuses listing fingerprints, whose ids describe where people report', async () => {
     await assertFails(asUser(env, 'author').collection('reportFingerprints').limit(10).get());
+  });
+});
+
+describe('one counter increment pays for exactly one report', () => {
+  /**
+   * The counter rule constrains how `count` moves; the report rule checks the
+   * counter's state after the commit. Neither, on their own, says *which*
+   * report an increment was spent on — so one batch could carry a single
+   * increment and several reports, each with its own fingerprint, and every
+   * report would see the same freshly written counter and pass. That multiplied
+   * the daily cap, skipped the minimum gap, and sidestepped duplicate detection
+   * in one commit. `lastReportId` binds the increment to one report, the same
+   * way the fingerprint's `reportId` already binds the duplicate check.
+   */
+
+  it('refuses two reports committed against one increment', async () => {
+    const db = asUser(env, 'author');
+    const batch = db.batch();
+
+    batch.set(db.doc('reportRateLimits/author'), {
+      userId: 'author',
+      windowStartAt: serverTimestamp(),
+      count: 1,
+      lastReportAt: serverTimestamp(),
+      lastReportId: 'multi-1',
+    });
+
+    for (const [reportId, type] of [
+      ['multi-1', 'accident'],
+      ['multi-2', 'crime'],
+    ]) {
+      const data = reportFixtureWithServerTimes('author');
+      data.type = type;
+      batch.set(
+        db.doc(`reportFingerprints/${buildReportFingerprintId('author', type, data.geohash)}`),
+        { reporterId: 'author', reportId, lastReportAt: serverTimestamp() },
+      );
+      batch.set(db.doc(`incidentReports/${reportId}`), data);
+    }
+
+    await assertFails(batch.commit());
+  });
+
+  it('refuses a counter that names a different report', async () => {
+    await assertFails(
+      submitReportBatch(asUser(env, 'author'), {
+        reporterId: 'author',
+        reportId: 'named-right',
+        rateLimit: { lastReportId: 'named-wrong' },
+      }),
+    );
+  });
+
+  it('refuses a counter that names no report at all', async () => {
+    const db = asUser(env, 'author');
+    const batch = db.batch();
+    const data = reportFixtureWithServerTimes('author');
+
+    batch.set(db.doc('reportRateLimits/author'), {
+      userId: 'author',
+      windowStartAt: serverTimestamp(),
+      count: 1,
+      lastReportAt: serverTimestamp(),
+    });
+    batch.set(
+      db.doc(`reportFingerprints/${buildReportFingerprintId('author', data.type, data.geohash)}`),
+      { reporterId: 'author', reportId: 'unnamed', lastReportAt: serverTimestamp() },
+    );
+    batch.set(db.doc('incidentReports/unnamed'), data);
+
+    await assertFails(batch.commit());
+  });
+});
+
+describe('the submit transaction can read the report it is about to create', () => {
+  /**
+   * `reportRepository.ts` reads the reserved report id first, so a retry after
+   * a lost response is recognised as already submitted. For an id that does not
+   * exist yet `resource` is null, and a rule that dereferences `resource.data`
+   * errors — which denies the read, and with it the whole transaction, for
+   * every new report.
+   */
+
+  it('lets a signed-in user read a report id that does not exist yet', async () => {
+    await assertSucceeds(asUser(env, 'author').doc('incidentReports/never-written').get());
+  });
+
+  it('accepts the transaction exactly as the app runs it, report read included', async () => {
+    const db = asUser(env, 'author');
+
+    await assertSucceeds(
+      db.runTransaction(async (transaction) => {
+        const reportRef = db.doc('incidentReports/app-shaped');
+        const counterRef = db.doc('reportRateLimits/author');
+        const data = reportFixtureWithServerTimes('author');
+        const fingerprintRef = db.doc(
+          `reportFingerprints/${buildReportFingerprintId('author', data.type, data.geohash)}`,
+        );
+
+        const [existing] = await Promise.all([
+          transaction.get(reportRef),
+          transaction.get(counterRef),
+          transaction.get(fingerprintRef),
+        ]);
+        assert.equal(existing.exists, false);
+
+        transaction.set(counterRef, {
+          userId: 'author',
+          windowStartAt: serverTimestamp(),
+          count: 1,
+          lastReportAt: serverTimestamp(),
+          lastReportId: 'app-shaped',
+        });
+        transaction.set(fingerprintRef, {
+          reporterId: 'author',
+          reportId: 'app-shaped',
+          lastReportAt: serverTimestamp(),
+        });
+        transaction.set(reportRef, data);
+      }),
+    );
+  });
+
+  it('still refuses reading somebody else’s existing report', async () => {
+    await seed(env, 'incidentReports/theirs', reportFixture({ reporterId: 'someone-else' }));
+    await assertFails(asUser(env, 'author').doc('incidentReports/theirs').get());
+  });
+});
+
+describe('placesQuota is closed to every client', () => {
+  it('refuses reading or writing even one’s own allowance', async () => {
+    const db = asUser(env, 'author');
+    await assertFails(db.doc('placesQuota/author').get());
+    await assertFails(db.doc('placesQuota/author').set({ count: 0, windowStartAt: new Date() }));
   });
 });

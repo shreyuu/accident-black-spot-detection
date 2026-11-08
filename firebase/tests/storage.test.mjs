@@ -80,6 +80,16 @@ beforeEach(async () => {
 });
 
 function asUser(uid) {
+  return env.authenticatedContext(uid, { email_verified: true }).storage();
+}
+
+/** A signed-in account that has not confirmed its address — see the rule. */
+function asUnverifiedUser(uid) {
+  return env.authenticatedContext(uid, { email_verified: false }).storage();
+}
+
+/** A token from a provider that never sets the claim at all. */
+function asClaimlessUser(uid) {
   return env.authenticatedContext(uid).storage();
 }
 
@@ -108,6 +118,14 @@ describe('who may upload', () => {
     // Ownership is structural: the uid is a path segment, so there is no lookup
     // to get wrong and no way to claim somebody else's prefix.
     await assertFails(upload(asUser(OTHER), ownPath('photo.jpg', OWNER)));
+  });
+
+  it('refuses an upload from an account whose email is not verified', async () => {
+    // An unverified account cannot file a report, so it has no legitimate
+    // upload — and without this an unlimited stream of throwaway accounts could
+    // use the bucket as free hosting via each object's token URL.
+    await assertFails(upload(asUnverifiedUser(OWNER), ownPath('unverified.jpg')));
+    await assertFails(upload(asClaimlessUser(OWNER), ownPath('claimless.jpg')));
   });
 
   it('refuses an anonymous upload', async () => {

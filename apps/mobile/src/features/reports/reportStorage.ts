@@ -1,3 +1,4 @@
+import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
 
 import type { SelectedImage } from '@/features/reports/reportImages';
@@ -77,6 +78,42 @@ async function readAsBlob(uri: string): Promise<Blob> {
   }
 }
 
+/** JPEG quality for the metadata-stripping re-encode; matches `PICKER_QUALITY`. */
+const REENCODE_QUALITY = 0.7;
+
+/**
+ * A copy of the photo with its metadata gone, as a JPEG.
+ *
+ * The picker's `exif: false` only stops EXIF being *returned to JavaScript*; the
+ * file keeps it. Android's compression exporter copies every tag into the file
+ * it writes, and iOS passes HEIC and WebP through untouched — so uploading the
+ * picker's file sent the photo's GPS position, capture time and device model to
+ * Storage, where a moderator opening the image, or anyone holding its token
+ * URL, could read them (SECURITY_AUDIT.md M5). A user who moved the report pin
+ * away from where they stood was undone by their own photograph.
+ *
+ * Re-encoding from the decoded pixels writes a new file that carries none of it.
+ * A failure **fails closed**: falling back to the original would upload exactly
+ * what this exists to remove.
+ */
+async function withoutMetadata(uri: string): Promise<{ uri: string; mimeType: 'image/jpeg' }> {
+  try {
+    const rendered = await ImageManipulator.manipulate(uri).renderAsync();
+    const saved = await rendered.saveAsync({ format: SaveFormat.JPEG, compress: REENCODE_QUALITY });
+    return { uri: saved.uri, mimeType: 'image/jpeg' };
+  } catch (error) {
+    throw new AppError(
+      'validation',
+      'That photo could not be prepared for upload. Choose a different one, or submit without a photo.',
+      {
+        retryable: false,
+        cause: error,
+        technicalMessage: 'Re-encoding the photo to strip its metadata failed.',
+      },
+    );
+  }
+}
+
 /** Firebase Storage error codes, mapped to copy and a sensible retry offer. */
 function toUploadError(error: unknown, context: { userId: string }): AppError {
   const code =
@@ -143,7 +180,8 @@ export interface UploadImageOptions {
 export async function uploadReportImage(options: UploadImageOptions): Promise<string> {
   const { userId, image, onProgress, signal } = options;
 
-  const blob = await readAsBlob(image.uri);
+  const cleaned = await withoutMetadata(image.uri);
+  const blob = await readAsBlob(cleaned.uri);
 
   if (blob.size > MAX_IMAGE_BYTES) {
     throw new AppError(
@@ -156,10 +194,10 @@ export async function uploadReportImage(options: UploadImageOptions): Promise<st
     );
   }
 
-  const storageRef = ref(getFirebaseStorage(), buildObjectPath(userId, image.mimeType));
+  const storageRef = ref(getFirebaseStorage(), buildObjectPath(userId, cleaned.mimeType));
 
   const task = uploadBytesResumable(storageRef, blob, {
-    contentType: image.mimeType,
+    contentType: cleaned.mimeType,
     // Kept minimal on purpose. No original filename, no device model, no EXIF
     // summary — the report already carries everything moderation needs, and
     // custom metadata is readable by anyone who can read the object.

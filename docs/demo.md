@@ -242,10 +242,17 @@ export FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099 FIRESTORE_EMULATOR_HOST=127.0.
 ```
 
 ```bash
+npm run confirm-email -- you@example.test
+```
+
+```bash
 npm run grant-role -- you@example.test admin
 ```
 
-Use the address you registered with in the app. Then:
+Use the address you registered with in the app. The address must be verified
+first — a privileged role is never granted to an unverified account, in the
+script or in `/roles`, and the dashboard refuses to sign one in
+(SECURITY_AUDIT.md M2). `confirm-email` does that against the emulator. Then:
 
 ```bash
 npm run admin
