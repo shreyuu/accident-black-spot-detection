@@ -1,6 +1,11 @@
 import { HttpsError, onCall, type CallableRequest } from 'firebase-functions/v2/https';
 import { defineSecret } from 'firebase-functions/params';
 import { logger } from 'firebase-functions';
+import { Timestamp } from 'firebase-admin/firestore';
+
+import { COLLECTIONS } from './collections.ts';
+import { adminFirestore } from './firebaseAdmin.ts';
+import { evaluatePlacesQuota, type PlacesQuotaState } from './placesQuota.ts';
 
 /**
  * Server-side proxy for the Google Places API.
@@ -87,9 +92,12 @@ export function normaliseProxyRequest(data: unknown): NearbyPlacesProxyRequest {
   }
 
   const raw = data as Record<string, unknown>;
-  const latitude = Number(raw.latitude);
-  const longitude = Number(raw.longitude);
-  const radiusM = Number(raw.radiusM);
+  // Numbers only, never coerced: `Number(null)`, `Number('')` and `Number([])`
+  // are all 0, which turned a request with missing coordinates into a billable
+  // search at (0, 0).
+  const latitude = typeof raw.latitude === 'number' ? raw.latitude : Number.NaN;
+  const longitude = typeof raw.longitude === 'number' ? raw.longitude : Number.NaN;
+  const radiusM = typeof raw.radiusM === 'number' ? raw.radiusM : Number.NaN;
 
   if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90) {
     throw new HttpsError('invalid-argument', 'A valid latitude is required.');
@@ -97,7 +105,9 @@ export function normaliseProxyRequest(data: unknown): NearbyPlacesProxyRequest {
   if (!Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
     throw new HttpsError('invalid-argument', 'A valid longitude is required.');
   }
-  if (!Number.isFinite(radiusM) || radiusM <= 0) {
+  // Compared after rounding, which is what is forwarded: 0.4 m passed a `> 0`
+  // check and reached Google as a radius of zero.
+  if (!Number.isFinite(radiusM) || Math.round(radiusM) < 1) {
     throw new HttpsError('invalid-argument', 'A valid radius is required.');
   }
 
@@ -119,13 +129,68 @@ export function normaliseProxyRequest(data: unknown): NearbyPlacesProxyRequest {
   };
 }
 
+/**
+ * Spend one of the caller's daily lookups, or refuse.
+ *
+ * A transaction, so two concurrent calls cannot both read the same count and
+ * both succeed. Runs only after the request has validated and the key exists,
+ * so a malformed or unconfigured call does not cost the user an allowance.
+ */
+async function spendPlacesQuota(uid: string): Promise<void> {
+  const firestore = adminFirestore();
+  const reference = firestore.collection(COLLECTIONS.placesQuota).doc(uid);
+
+  const allowed = await firestore.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(reference);
+    const count: unknown = snapshot.get('count');
+    const windowStartAt: unknown = snapshot.get('windowStartAt');
+
+    const state: PlacesQuotaState | null =
+      snapshot.exists && typeof count === 'number' && windowStartAt instanceof Timestamp
+        ? { count, windowStartMs: windowStartAt.toMillis() }
+        : null;
+
+    const decision = evaluatePlacesQuota(state, Date.now());
+    if (!decision.allowed) {
+      return false;
+    }
+
+    transaction.set(reference, {
+      count: decision.next.count,
+      windowStartAt: Timestamp.fromMillis(decision.next.windowStartMs),
+    });
+    return true;
+  });
+
+  if (!allowed) {
+    // The app falls back to OpenStreetMap on any proxy error, so running out is
+    // a degraded result, not a missing one.
+    throw new HttpsError('resource-exhausted', 'Daily nearby-places allowance reached.');
+  }
+}
+
 export const nearbyPlacesProxy = onCall(
-  { secrets: [googlePlacesApiKey] },
+  {
+    secrets: [googlePlacesApiKey],
+    // A ceiling on concurrent spend. Without it the function scaled out to meet
+    // whatever a script threw at it, every instance holding a billable key.
+    maxInstances: 10,
+  },
   async (request: CallableRequest): Promise<unknown> => {
     // Signed in, so the proxy is not an open relay onto a billable API.
-    if (request.auth?.uid === undefined) {
+    const uid = request.auth?.uid;
+    if (uid === undefined) {
       throw new HttpsError('unauthenticated', 'You need to be signed in to search nearby places.');
     }
+
+    // Verified, the same bar as filing a report. An account costs nothing to
+    // create; an inbox costs a little. The app falls back to OpenStreetMap on
+    // this refusal, so an unverified user still finds the nearest hospital.
+    if (request.auth?.token.email_verified !== true) {
+      throw new HttpsError('permission-denied', 'Verify your email address to use this provider.');
+    }
+
+    const query = normaliseProxyRequest(request.data);
 
     const key = googlePlacesApiKey.value();
     if (key.length === 0) {
@@ -134,7 +199,7 @@ export const nearbyPlacesProxy = onCall(
       throw new HttpsError('failed-precondition', 'Google Places is not configured.');
     }
 
-    const query = normaliseProxyRequest(request.data);
+    await spendPlacesQuota(uid);
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);

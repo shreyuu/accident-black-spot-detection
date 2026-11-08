@@ -3,14 +3,11 @@ import 'server-only';
 import { cookies } from 'next/headers';
 import { cache } from 'react';
 
-import {
-  canAccessDashboard,
-  isUserRole,
-  type UserRole,
-} from '@accident-black-spot-detection/shared-types';
+import { canAccessDashboard, type UserRole } from '@accident-black-spot-detection/shared-types';
 
 import { serverEnv } from '@/lib/env';
 import { getAdminAuth } from '@/lib/firebaseAdmin';
+import { dashboardRoleFromClaims } from '@/lib/sessionPolicy';
 
 /**
  * Who is asking, and what they are allowed to do.
@@ -110,7 +107,9 @@ export const getActor = cache(async (): Promise<Actor | null> => {
     // still has access right now". Without it a revoked session keeps working
     // until the cookie's own expiry.
     const decoded = await getAdminAuth().verifySessionCookie(token, true);
-    const role = isUserRole(decoded.role) ? decoded.role : 'user';
+    // An unverified address holds no role here, even with a claim — see
+    // `dashboardRoleFromClaims`.
+    const role = dashboardRoleFromClaims(decoded);
     const email = typeof decoded.email === 'string' ? decoded.email : '';
 
     return { uid: decoded.uid, email, role };

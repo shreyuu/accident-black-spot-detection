@@ -1,3 +1,5 @@
+import { DRAFT_MAX_AGE_MS } from '@accident-black-spot-detection/shared-types';
+
 /**
  * Deciding what to do with reports that could not be submitted.
  *
@@ -53,8 +55,11 @@ export const MAX_RETRY_DELAY_MS = 30 * 60 * 1000;
  * that the device is not indefinitely holding a description of an incident and
  * a set of photographs the user has forgotten about. Data kept for no active
  * purpose is data this project has undertaken not to keep.
+ *
+ * Defined in shared-types because the orphaned-image sweep must wait longer than
+ * this before deleting a queued draft's already-uploaded photos.
  */
-export const DRAFT_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
+export { DRAFT_MAX_AGE_MS };
 
 /** Why a draft is not currently being retried. */
 export type DraftBlockedReason =

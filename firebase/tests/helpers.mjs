@@ -278,6 +278,7 @@ export function submitReportBatch(db, options = {}) {
       windowStartAt: serverTimestamp(),
       count: 1,
       lastReportAt: serverTimestamp(),
+      lastReportId: reportId,
       ...rateLimit,
     });
   }

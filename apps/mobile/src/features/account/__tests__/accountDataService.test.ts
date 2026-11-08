@@ -1,7 +1,20 @@
 import { httpsCallable } from 'firebase/functions';
 
-import { deleteAccount, exportMyData } from '@/features/account/accountDataService';
+import {
+  deleteAccount,
+  deleteAccountWithPassword,
+  exportMyData,
+} from '@/features/account/accountDataService';
+import { confirmPassword, logout } from '@/features/auth/authService';
 import { AppError } from '@/utils/errors';
+
+jest.mock('@/features/auth/authService', () => ({
+  confirmPassword: jest.fn(),
+  logout: jest.fn(),
+}));
+
+const mockedConfirmPassword = jest.mocked(confirmPassword);
+const mockedLogout = jest.mocked(logout);
 
 jest.mock('@/services/firebase/app', () => ({
   getFirebaseFunctions: () => ({}),
@@ -108,5 +121,75 @@ describe('exportMyData', () => {
     rejectsWith('functions/deadline-exceeded');
 
     await expect(exportMyData()).rejects.toBeInstanceOf(AppError);
+  });
+});
+
+describe('deleteAccount and a stale sign-in', () => {
+  it('asks for the password again when the server wants a recent sign-in', async () => {
+    rejectsWith('functions/failed-precondition');
+
+    await expect(deleteAccount()).rejects.toMatchObject({
+      kind: 'auth',
+      retryable: false,
+      userMessage: expect.stringMatching(/password/i),
+    });
+  });
+});
+
+describe('deleteAccountWithPassword', () => {
+  const SUMMARY = { documentsDeleted: 4, reportsAnonymised: 1, imagesDeleted: 2 };
+
+  it('confirms the password before anything is deleted', async () => {
+    const order: string[] = [];
+    mockedConfirmPassword.mockImplementation(async () => {
+      order.push('confirm');
+    });
+    const call = jest.fn().mockImplementation(async () => {
+      order.push('delete');
+      return { data: SUMMARY };
+    });
+    mockedHttpsCallable.mockReturnValue(call as never);
+
+    await deleteAccountWithPassword('correct horse');
+
+    expect(mockedConfirmPassword).toHaveBeenCalledWith('correct horse');
+    expect(order).toEqual(['confirm', 'delete']);
+  });
+
+  it('deletes nothing when the password is wrong', async () => {
+    mockedConfirmPassword.mockRejectedValue(
+      new AppError('auth', 'Those details were not recognised.'),
+    );
+    const call = resolves(SUMMARY);
+
+    await expect(deleteAccountWithPassword('wrong')).rejects.toMatchObject({ kind: 'auth' });
+    expect(call).not.toHaveBeenCalled();
+  });
+
+  it('signs out locally once the account is gone', async () => {
+    // The ID token outlives the Auth record by up to an hour. Without a local
+    // sign-out the draft queue and the background task kept writing under the
+    // deleted uid — data the user had just been told was erased.
+    mockedConfirmPassword.mockResolvedValue(undefined);
+    resolves(SUMMARY);
+
+    await expect(deleteAccountWithPassword('correct horse')).resolves.toEqual(SUMMARY);
+    expect(mockedLogout).toHaveBeenCalledTimes(1);
+  });
+
+  it('still reports success if the local sign-out fails afterwards', async () => {
+    mockedConfirmPassword.mockResolvedValue(undefined);
+    mockedLogout.mockRejectedValue(new Error('offline'));
+    resolves(SUMMARY);
+
+    await expect(deleteAccountWithPassword('correct horse')).resolves.toEqual(SUMMARY);
+  });
+
+  it('does not sign out when deletion failed', async () => {
+    mockedConfirmPassword.mockResolvedValue(undefined);
+    rejectsWith('functions/internal');
+
+    await expect(deleteAccountWithPassword('correct horse')).rejects.toBeInstanceOf(AppError);
+    expect(mockedLogout).not.toHaveBeenCalled();
   });
 });

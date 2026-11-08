@@ -266,3 +266,15 @@ function checkDuplicate(
     retryAfterMs: expiresAtMs - nowMs,
   };
 }
+
+/**
+ * How long the app keeps an unsent report draft before treating it as
+ * abandoned, in milliseconds.
+ *
+ * Shared because the server depends on it: a queued draft keeps its photos'
+ * download URLs and never re-uploads them, so the orphaned-image sweep must not
+ * delete an unreferenced upload any sooner than this. `functions/src/orphanSweep.ts`
+ * carries its own copy of the grace period (the functions deploy cannot import
+ * this workspace package) and a test there asserts it is longer.
+ */
+export const DRAFT_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;

@@ -28,6 +28,7 @@ export const COLLECTIONS = {
   reportRateLimits: 'reportRateLimits',
   reportFingerprints: 'reportFingerprints',
   deletedAccounts: 'deletedAccounts',
+  placesQuota: 'placesQuota',
 } as const;
 
 /** Storage prefix holding report photographs, one folder per uid. */

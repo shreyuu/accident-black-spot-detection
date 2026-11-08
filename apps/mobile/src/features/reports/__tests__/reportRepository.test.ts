@@ -162,6 +162,9 @@ describe('createIncidentReport', () => {
       windowStartAt: '__serverTimestamp__',
       count: 1,
       lastReportAt: '__serverTimestamp__',
+      // Binds this increment to this report — the rules refuse a counter that
+      // names any other id, so one increment cannot pay for several reports.
+      lastReportId: 'report-1',
     });
   });
 

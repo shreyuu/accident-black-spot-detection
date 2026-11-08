@@ -74,3 +74,18 @@ export function canManageBlackSpots(role: UserRole | null | undefined): boolean 
 export function canManageRoles(role: UserRole | null | undefined): boolean {
   return role === 'admin';
 }
+
+/**
+ * Whether an account may be given `role`.
+ *
+ * A privileged role needs a **verified** email address. Roles are granted by
+ * typing an address, and sign-up accepts any address without proving it — so
+ * without this, whoever registered a future moderator's address first received
+ * the role the moment an administrator granted it (SECURITY_AUDIT.md M2).
+ *
+ * A demotion is always allowed: taking a role away from an account must never
+ * be blocked by the state of its inbox.
+ */
+export function canReceiveRole(role: UserRole, emailVerified: boolean): boolean {
+  return role === DEFAULT_ROLE || emailVerified;
+}

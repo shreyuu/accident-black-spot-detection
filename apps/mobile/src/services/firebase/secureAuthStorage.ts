@@ -37,11 +37,26 @@ import { logger } from '@/utils/logger';
  * Chunks are written before the manifest, and stale chunks are pruned after.
  * A crash mid-write therefore leaves the old manifest (or none) rather than a
  * manifest pointing at chunks that were never stored.
+ *
+ * ## Keychain accessibility
+ *
+ * `AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY`, not the default `WHEN_UNLOCKED`.
+ * Background location monitoring relaunches the app while the phone is
+ * locked; under `WHEN_UNLOCKED` the keychain read failed, read back as "no
+ * stored session", and Firebase discarded the session — so the app ran its
+ * sign-out cleanup (stopping background warnings, deleting drafts) for a user
+ * who never signed out (SECURITY_AUDIT.md B2). After-first-unlock is what iOS
+ * recommends for background work. `THIS_DEVICE_ONLY` keeps the refresh token
+ * out of backups restored to another device.
  */
+
+const KEYCHAIN_OPTIONS: SecureStore.SecureStoreOptions = {
+  keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
+};
 
 async function readRaw(key: string): Promise<string | null> {
   try {
-    return await SecureStore.getItemAsync(key);
+    return await SecureStore.getItemAsync(key, KEYCHAIN_OPTIONS);
   } catch (error) {
     logger.warn('secureAuthStorage', 'Failed to read a SecureStore entry', {
       // The key is logged, never the value — the value is a credential.
@@ -54,7 +69,7 @@ async function readRaw(key: string): Promise<string | null> {
 
 async function deleteRaw(key: string): Promise<void> {
   try {
-    await SecureStore.deleteItemAsync(key);
+    await SecureStore.deleteItemAsync(key, KEYCHAIN_OPTIONS);
   } catch {
     // Deleting a key that does not exist is not an error worth surfacing.
   }
@@ -109,9 +124,9 @@ export const secureAuthStorage: ReactNativeAsyncStorage = {
     try {
       // Chunks first, manifest last — see "Write ordering" above.
       for (const [index, part] of chunks.entries()) {
-        await SecureStore.setItemAsync(chunkKey(baseKey, index), part);
+        await SecureStore.setItemAsync(chunkKey(baseKey, index), part, KEYCHAIN_OPTIONS);
       }
-      await SecureStore.setItemAsync(baseKey, encodeManifest(chunks.length));
+      await SecureStore.setItemAsync(baseKey, encodeManifest(chunks.length), KEYCHAIN_OPTIONS);
     } catch (error) {
       logger.error('secureAuthStorage', 'Failed to persist the session', error, {
         chunkCount: chunks.length,

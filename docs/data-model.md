@@ -157,6 +157,12 @@ the client_ but cannot be forged, because the rules require them to arrive in th
 report without incrementing its counter is refused; a client that increments its
 counter without a matching report is refused. The coupling is the mechanism.
 
+The counter also records `lastReportId`, and the report rule requires it to equal
+the report's own id. Without that, one commit could carry a single increment and
+several reports — each with its own fingerprint — and every report saw the same
+freshly written counter (SECURITY_AUDIT.md M1). The counter's fields are
+`userId`, `windowStartAt`, `count`, `lastReportAt` and `lastReportId`.
+
 `reportFingerprints` is the more interesting of the two. The identifying
 information is in the **document id**, not in its fields: the id is derived from
 the reporter, the incident type and a 7-character geohash prefix (about a
@@ -250,8 +256,11 @@ Images upload **before** the report document is written, so abandoning the form
 after choosing a photo leaves an unreferenced object. That ordering is
 deliberate: a report must never reference photographs that never arrived. The
 `sweepOrphanedImages` scheduled function removes anything unreferenced for more
-than 24 hours, and the grace period is generous because deleting an object from a
-submission still being typed would strip evidence from a live report.
+than 15 days. The grace period must outlast the app's offline draft queue
+(`DRAFT_MAX_AGE_MS`, 14 days): a draft that failed to submit keeps its photos'
+download URLs and does not re-upload them, so until it is retried those uploads
+are unreferenced and still wanted. At 24 hours, a draft retried on day two filed
+a report whose photographs were already gone (SECURITY_AUDIT.md M4).
 
 ---
 

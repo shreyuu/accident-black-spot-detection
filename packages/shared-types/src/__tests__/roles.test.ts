@@ -7,6 +7,7 @@ import {
   canManageBlackSpots,
   canManageRoles,
   canModerateReports,
+  canReceiveRole,
   DEFAULT_ROLE,
   isUserRole,
   normaliseAuditSummary,
@@ -118,5 +119,27 @@ describe('normaliseAuditSummary', () => {
       normaliseAuditSummary('x'.repeat(AUDIT_SUMMARY_MAX_LENGTH + 50)).length,
       AUDIT_SUMMARY_MAX_LENGTH,
     );
+  });
+});
+
+describe('canReceiveRole', () => {
+  /**
+   * Sign-up accepts any address without proving it, and roles are granted by
+   * email. Without this, whoever registered a future moderator's address first
+   * received the role when an administrator typed it in.
+   */
+  it('refuses a privileged role to an account whose email is not verified', () => {
+    assert.equal(canReceiveRole('moderator', false), false);
+    assert.equal(canReceiveRole('admin', false), false);
+  });
+
+  it('grants a privileged role once the email is verified', () => {
+    assert.equal(canReceiveRole('moderator', true), true);
+    assert.equal(canReceiveRole('admin', true), true);
+  });
+
+  it('always allows a demotion, verified or not', () => {
+    assert.equal(canReceiveRole('user', false), true);
+    assert.equal(canReceiveRole('user', true), true);
   });
 });

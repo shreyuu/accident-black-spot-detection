@@ -82,6 +82,25 @@ class TestRejection:
 
 
 class TestDeduplication:
+    @pytest.mark.parametrize("anonymous", ["deleted-account", ""])
+    def test_never_collapses_reports_whose_reporter_is_unknown(self, anonymous: str) -> None:
+        """An erased account is not one person.
+
+        Account deletion replaces every approved report's ``reporterId`` with the
+        same marker, so two deleted people's reports of one junction shared a
+        "reporter" and the second was dropped as a duplicate — corroboration
+        deleted precisely because both people had left.
+        """
+        reports = [
+            make_report("r1", reporter_id=anonymous, occurred_at=NOW),
+            make_report("r2", reporter_id=anonymous, occurred_at=NOW + timedelta(minutes=5)),
+        ]
+
+        result = clean_reports(reports)
+
+        assert len(result.reports) == 2
+        assert result.duplicates_removed == 0
+
     def test_collapses_one_reporter_repeating_the_same_event(self) -> None:
         reports = [
             make_report("r1", reporter_id="alice", occurred_at=NOW),
@@ -210,3 +229,20 @@ class TestCounts:
         ]
 
         assert len(clean_reports(reports).reports) == 1
+
+
+class TestEffectiveTime:
+    """``occurredAt`` is the reporter's claim; ``createdAt`` is the server's."""
+
+    def test_uses_the_reported_time_when_it_precedes_submission(self) -> None:
+        report = make_report("r1", occurred_at=NOW - timedelta(hours=2), created_at=NOW)
+
+        assert report.effective_time == NOW - timedelta(hours=2)
+
+    def test_never_trusts_a_reported_time_after_submission(self) -> None:
+        # Nothing can be reported before it happens. A later ``occurredAt`` —
+        # say the year 2100 — used to pin the recency weight at its maximum for
+        # ever (SECURITY_AUDIT.md L2).
+        report = make_report("r1", occurred_at=NOW + timedelta(days=30000), created_at=NOW)
+
+        assert report.effective_time == NOW

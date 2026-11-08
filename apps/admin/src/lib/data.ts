@@ -14,6 +14,7 @@ import {
 
 import { serverEnv } from '@/lib/env';
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
+import { displayableImageUrls } from '@/lib/reportImages';
 import { toPublicReporter, type PublicReporter } from '@/lib/reporterPrivacy';
 
 /**
@@ -146,8 +147,9 @@ function toReportRow(id: string, data: Record<string, unknown>, actorUid: string
     description: asString(data.description),
     latitude: asNumber(data.latitude),
     longitude: asNumber(data.longitude),
+    // Only Firebase Storage links reach the page — see `reportImages.ts`.
     imageUrls: Array.isArray(data.imageUrls)
-      ? data.imageUrls.filter((url): url is string => typeof url === 'string')
+      ? displayableImageUrls(data.imageUrls, serverEnv.usingEmulators)
       : [],
     moderationNotes: notes.length > 0 ? notes : null,
     // `reviewedBy` is deliberately not carried. It is the deciding moderator's

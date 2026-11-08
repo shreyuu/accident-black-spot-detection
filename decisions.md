@@ -914,3 +914,219 @@ people actually make, not every mistake possible.
   to be a copy at that point, and `DEC-009`'s asymmetry argument weakens.
 - The `Props`-export cleanup is picked up. If it lands as a lint rule rather than
   by hand, that is its own decision.
+
+---
+
+## DEC-010 — A verified email is the bar for privilege and for spending, not only for reporting
+
+**Date:** 2026-10-24
+**Status:** Active
+**Affected Areas:** `packages/shared-types/src/roles.ts` (`canReceiveRole`),
+`apps/admin/src/lib/sessionPolicy.ts` (new), `apps/admin/src/lib/actions.ts`,
+`apps/admin/src/app/api/session/route.ts`, `firebase/scripts/grantRole.mjs`,
+`firebase/storage.rules`, `functions/src/nearbyPlacesProxy.ts`,
+`functions/src/placesQuota.ts` (new), `firebase/firestore.rules` (`placesQuota`)
+
+### Context
+
+The security audit (`SECURITY_AUDIT.md` M2, M3, L1) found three places where a
+free, unverified account could do more than file nothing:
+
+- roles are granted by typing an address, and sign-up accepts any address — so
+  whoever registered a future moderator's address first received the role;
+- Storage uploads needed only a signed-in uid, so throwaway accounts could host
+  files via token URLs;
+- the Places proxy needed only a signed-in uid, so a script could spend the
+  billable key without limit.
+
+`hasVerifiedEmail()` already gated report creation (`docs/security-and-privacy.md`
+§8) and deliberately nothing else.
+
+### Decision
+
+- A privileged role requires `emailVerified`, in both grant paths; demotion is
+  never blocked. The dashboard ignores a role claim on an unverified account,
+  at session mint and on every request.
+- Storage `create` requires `email_verified`.
+- `nearbyPlacesProxy` requires `email_verified`, caps instances at 10, and
+  spends a per-account daily allowance (50) held in `placesQuota/{uid}` —
+  Admin-SDK-only, closed to every client by the rules.
+
+### Reasoning
+
+Each widening follows the §8 argument: verification turns an account from free
+into "costs an inbox". It does not touch the §8 exclusions — SOS, emergency
+contacts, black spots and warnings stay ungated. An unverified user loses only
+photo upload (useless without the report it belongs to) and the Google
+provider, which degrades to OpenStreetMap exactly as an unconfigured key does.
+
+### Alternatives Considered
+
+- **App Check.** The real fix for scripted clients, still listed in §7; it needs
+  client integration and attestation providers. Not a substitute for an
+  account-level bound anyway.
+- **A Places cache instead of a quota.** Reduces cost for honest traffic, does
+  nothing against a script varying coordinates.
+
+### Trade-offs
+
+Benefits: no free path to a privileged role, to storage, or to the Places bill.
+
+Costs: one more collection; an admin must wait for a moderator to verify before
+granting; the quota number is a judgement (`PLACES_QUOTA`).
+
+### Consequences
+
+`docs/demo.md` and `docs/running.md` now run `npm run confirm-email` before
+`grant-role`.
+
+### Revisit When
+
+App Check is adopted, or the quota proves too low for real use.
+
+---
+
+## DEC-011 — Tie the orphan-sweep grace period to the offline draft lifetime
+
+**Date:** 2026-10-24
+**Status:** Active
+**Affected Areas:** `functions/src/orphanSweep.ts`,
+`packages/shared-types/src/reportLimits.ts` (`DRAFT_MAX_AGE_MS`),
+`apps/mobile/src/features/reports/draftQueue.ts`
+
+### Context
+
+A queued draft keeps its photos' download URLs for up to 14 days and does not
+re-upload them; the sweep deleted unreferenced uploads after 24 hours. A draft
+retried on day two filed a report with no evidence (`SECURITY_AUDIT.md` M4). The
+sweep also matched references by substring, so one long `imageUrls` entry could
+keep any number of objects alive (L3).
+
+### Decision
+
+Grace period = draft lifetime + 1 day (15 days). `DRAFT_MAX_AGE_MS` moves to
+shared-types; the functions copy is asserted longer by a test (the functions
+deploy cannot import the workspace package — see `DEC-009`). References are now
+parsed: one URL names exactly one object path.
+
+### Alternatives Considered
+
+**Re-upload stale photos from the client.** Keeps the 24-hour sweep, but fails
+whenever the OS has cleared the picker's cached file — a second way to lose the
+evidence.
+
+### Trade-offs
+
+An abandoned upload now lingers up to 15 days instead of one; documented in
+`docs/known-limitations.md` and `docs/data-model.md`.
+
+### Revisit When
+
+`DRAFT_MAX_AGE_MS` changes (the test fails first), or drafts start re-uploading.
+
+---
+
+## DEC-012 — Account deletion needs a fresh password, and ends the local session
+
+**Date:** 2026-10-24
+**Status:** Active
+**Affected Areas:** `functions/src/deleteAccount.ts`, `functions/src/deletionPolicy.ts`
+(`isRecentSignIn`, `inBatches`), `apps/mobile/src/features/account/accountDataService.ts`
+(`deleteAccountWithPassword`), `apps/mobile/src/features/auth/authService.ts`
+(`confirmPassword`), `apps/mobile/app/account/data.tsx`
+
+### Context
+
+`deleteAccount` accepted any valid ID token (up to an hour old), and the app did
+not sign out afterwards — so its draft queue and background task kept writing
+under the deleted uid until the token expired (`SECURITY_AUDIT.md` L6, M6).
+
+### Decision
+
+The function refuses an `auth_time` older than five minutes
+(`failed-precondition`); the screen asks for the password, re-authenticates,
+deletes, then signs out locally. Report writes are batched (≤ 400), which also
+fixes accounts with more than 500 reports being undeletable (B3).
+
+### Alternatives Considered
+
+**Typed confirmation only.** Already present; it proves intent, not identity.
+
+### Trade-offs
+
+One more field on the delete screen. A user who signed in with a provider other
+than email/password would need a different re-auth path — none exists today.
+
+### Revisit When
+
+Another sign-in provider is added.
+
+---
+
+## DEC-013 — Analytics never merges unknown reporters, and never trusts a future `occurredAt`
+
+**Date:** 2026-10-24
+**Status:** Active (partial — see Revisit When)
+**Affected Areas:** `services/analytics/app/models/domain.py`,
+`services/analytics/app/services/cleaning.py`, `firebase/firestore.rules`
+
+### Context
+
+Account deletion writes the same `reporterId` marker onto every approved report,
+so cleaning collapsed different deleted people's reports as one person's
+duplicates (B8). `occurredAt` had no server-side bound and the pipeline preferred
+it, so a far-future date pinned recency at its maximum (L2).
+
+### Decision
+
+- `_is_duplicate_of` never merges reports whose reporter is the deletion marker
+  or empty (`has_known_reporter`).
+- `effective_time` is `min(occurred_at, created_at)`; the rules also bound
+  `occurredAt` to [-365 days, +5 minutes].
+
+### Trade-offs
+
+Two reports from one deleted person within 100 m and an hour now both survive
+cleaning — a slight report-count inflation, preferred over deleting
+corroboration.
+
+### Revisit When
+
+`distinct_reporters` is revisited: it still counts every anonymised report as
+one reporter, which undercounts corroboration. Counting each as distinct would
+overcount instead; that choice is listed as D5 in `SECURITY_AUDIT.md`.
+
+---
+
+## DEC-014 — Remediate dependency advisories with targeted in-range bumps, not `npm audit fix`
+
+**Date:** 2026-10-24
+**Status:** Active
+**Affected Areas:** `package-lock.json`, `apps/admin/package.json`,
+`services/analytics/uv.lock`
+
+### Context
+
+`DEC-006` keeps advisories as a weekly report, because the Expo tree carries
+advisories that cannot be cleared without breaking the SDK. The audit still found
+shipped, fixable ones: `next@16.2.12` (unauthenticated RCE in the image
+optimiser, Server Actions DoS), `firebase-admin` ≤ 14.3 transitives, `zod`
+< 4.6.6, and PyPI `urllib3`, `h2`, `pyjwt`, `certifi`.
+
+### Decision
+
+Bump exactly those: `next`/`eslint-config-next` → 16.4.2 (16.4.3 was a day old),
+`npm update firebase-admin zod` (in range), `uv lock --upgrade-package` for the
+four Python packages. `npm audit fix` was tried and reverted: it rewrote 260
+lockfile entries across the Expo toolchain, which is the "upgrade casually" this
+repository's pinning rule exists to prevent.
+
+### Trade-offs
+
+Expo-tree advisories (`shell-quote`, `node-forge`, `@xmldom/xmldom`, …) remain;
+they are dev tooling or need an SDK upgrade. `pillow` (dev-only, via `mlxtend`)
+remains on 12.x.
+
+### Revisit When
+
+The next Expo SDK upgrade — re-run `npm audit --omit=dev` then.

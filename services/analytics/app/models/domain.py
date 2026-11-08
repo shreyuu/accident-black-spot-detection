@@ -87,6 +87,13 @@ COLLECTION_ANALYSIS_JOBS = "analysisJobs"
 BLACK_SPOT_RADIUS_MIN_M = 50
 BLACK_SPOT_RADIUS_MAX_M = 5000
 
+#: ``reporterId`` values that do not identify a person. The first mirrors
+#: ``DELETED_REPORTER_MARKER`` in ``functions/src/deletionPolicy.ts``, written onto
+#: every approved report when its author deletes their account; the second is a
+#: report stored without one. ``tests/test_vocabulary_mirror.py`` checks the marker.
+DELETED_REPORTER_MARKER = "deleted-account"
+ANONYMOUS_REPORTER_IDS = frozenset({DELETED_REPORTER_MARKER, ""})
+
 
 # -----------------------------------------------------------------------------
 # Algorithm versioning
@@ -149,8 +156,26 @@ class IncidentReport(BaseModel):
 
     @property
     def effective_time(self) -> datetime | None:
-        """When the incident happened, as best as it is known."""
+        """When the incident happened, as best as it is known.
+
+        Never later than ``created_at``: nothing is reported before it happens,
+        and ``occurred_at`` is the reporter's claim where ``created_at`` is the
+        server's. Taken at face value, a far-future ``occurred_at`` pinned the
+        recency weight at its maximum for ever (SECURITY_AUDIT.md L2). The rules
+        now bound the field too; this keeps already-stored values honest.
+        """
+        if self.occurred_at is not None and self.created_at is not None:
+            return min(self.occurred_at, self.created_at)
         return self.occurred_at or self.created_at
+
+    @property
+    def has_known_reporter(self) -> bool:
+        """Whether ``reporter_id`` identifies one person.
+
+        False for an erased account's marker and for a missing id: many people
+        share those values, so they must never be treated as one reporter.
+        """
+        return self.reporter_id not in ANONYMOUS_REPORTER_IDS
 
 
 # -----------------------------------------------------------------------------

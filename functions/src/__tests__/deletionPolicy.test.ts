@@ -6,7 +6,10 @@ import {
   buildDeletionReceipt,
   DELETED_REPORTER_MARKER,
   dispositionOf,
+  inBatches,
+  isRecentSignIn,
   planReportDeletion,
+  RECENT_SIGN_IN_MAX_AGE_MS,
 } from '../deletionPolicy.ts';
 
 describe('dispositionOf', () => {
@@ -108,5 +111,53 @@ describe('buildDeletionReceipt', () => {
     for (const forbidden of ['uid', 'email', 'name', 'phone', 'latitude', 'longitude']) {
       assert.equal(serialised.includes(forbidden), false, `receipt must not carry ${forbidden}`);
     }
+  });
+});
+
+describe('isRecentSignIn', () => {
+  /**
+   * Deletion is irreversible, so it needs a fresh sign-in rather than any
+   * still-valid ID token — those live an hour, and an unlocked phone or a leaked
+   * token was enough to erase an account.
+   */
+  const NOW = Date.UTC(2026, 9, 24, 12, 0, 0);
+  const seconds = (ms: number) => Math.floor(ms / 1000);
+
+  it('accepts a sign-in a minute ago', () => {
+    assert.equal(isRecentSignIn(seconds(NOW - 60_000), NOW), true);
+  });
+
+  it('refuses a sign-in older than the limit', () => {
+    assert.equal(isRecentSignIn(seconds(NOW - RECENT_SIGN_IN_MAX_AGE_MS - 1000), NOW), false);
+  });
+
+  it('refuses a token with no usable auth_time', () => {
+    assert.equal(isRecentSignIn(undefined, NOW), false);
+    assert.equal(isRecentSignIn('1700000000', NOW), false);
+    assert.equal(isRecentSignIn(Number.NaN, NOW), false);
+  });
+
+  it('allows a little clock skew into the future', () => {
+    assert.equal(isRecentSignIn(seconds(NOW + 30_000), NOW), true);
+  });
+});
+
+describe('inBatches', () => {
+  // Every report write used to go into one batch. Firestore caps a batch at 500
+  // writes, and at ten reports a day an account passes that in under two months
+  // — after which it could never be deleted at all.
+  it('splits a long list into batches no larger than the limit', () => {
+    const items = Array.from({ length: 901 }, (_, index) => index);
+    const batches = inBatches(items, 400);
+
+    assert.deepEqual(
+      batches.map((batch) => batch.length),
+      [400, 400, 101],
+    );
+    assert.deepEqual(batches.flat(), items);
+  });
+
+  it('returns no batches for an empty list', () => {
+    assert.deepEqual(inBatches([], 400), []);
   });
 });

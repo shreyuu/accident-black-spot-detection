@@ -1,6 +1,8 @@
 import {
   createUserWithEmailAndPassword,
+  EmailAuthProvider,
   onAuthStateChanged,
+  reauthenticateWithCredential,
   sendEmailVerification,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
@@ -13,6 +15,7 @@ import { mapFirebaseAuthError } from '@/features/auth/authErrors';
 import type { LoginValues, RegisterValues } from '@/features/auth/schemas';
 import { getFirebaseAuth } from '@/services/firebase/app';
 import { createUserProfile } from '@/services/firebase/userProfileRepository';
+import { AppError } from '@/utils/errors';
 import { logger } from '@/utils/logger';
 
 /**
@@ -168,6 +171,27 @@ export async function login(values: LoginValues): Promise<User> {
 export async function logout(): Promise<void> {
   try {
     await signOut(getFirebaseAuth());
+  } catch (error) {
+    throw mapFirebaseAuthError(error);
+  }
+}
+
+/**
+ * Re-confirm the signed-in user's password.
+ *
+ * Makes the current sign-in *recent*, which `deleteAccount` requires: an
+ * irreversible operation should need the password, not merely a phone that
+ * happens to be unlocked. Mapped through the same error table as sign-in, so a
+ * wrong password reads exactly as it does on the login screen.
+ */
+export async function confirmPassword(password: string): Promise<void> {
+  const user = getFirebaseAuth().currentUser;
+  if (user === null || user.email === null) {
+    throw new AppError('auth', 'Please sign in again to continue.', { retryable: false });
+  }
+
+  try {
+    await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, password));
   } catch (error) {
     throw mapFirebaseAuthError(error);
   }

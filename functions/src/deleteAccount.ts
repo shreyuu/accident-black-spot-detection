@@ -5,6 +5,8 @@ import { COLLECTIONS, REPORT_IMAGES_PREFIX } from './collections.ts';
 import {
   anonymisedReportFields,
   buildDeletionReceipt,
+  inBatches,
+  isRecentSignIn,
   planReportDeletion,
 } from './deletionPolicy.ts';
 import { adminAuth, adminBucket, adminFirestore } from './firebaseAdmin.ts';
@@ -88,18 +90,26 @@ async function deleteAccountData(uid: string): Promise<DeleteAccountResult> {
     })),
   );
 
-  const reportBatch = firestore.batch();
-  for (const reportId of plan.reportsToDelete) {
-    reportBatch.delete(firestore.collection(COLLECTIONS.incidentReports).doc(reportId));
-    documentsDeleted += 1;
+  // In batches of BATCH_LIMIT. One batch for every report failed outright once an
+  // account had more than Firestore's per-batch maximum, which at ten reports a
+  // day takes under two months — and such an account could never be deleted.
+  const reportWrites = [
+    ...plan.reportsToDelete.map((id) => ({ id, anonymise: false })),
+    ...plan.reportsToAnonymise.map((id) => ({ id, anonymise: true })),
+  ];
+  for (const group of inBatches(reportWrites, BATCH_LIMIT)) {
+    const reportBatch = firestore.batch();
+    for (const { id, anonymise } of group) {
+      const reportRef = firestore.collection(COLLECTIONS.incidentReports).doc(id);
+      if (anonymise) {
+        reportBatch.update(reportRef, anonymisedReportFields());
+      } else {
+        reportBatch.delete(reportRef);
+        documentsDeleted += 1;
+      }
+    }
+    await reportBatch.commit();
   }
-  for (const reportId of plan.reportsToAnonymise) {
-    reportBatch.update(
-      firestore.collection(COLLECTIONS.incidentReports).doc(reportId),
-      anonymisedReportFields(),
-    );
-  }
-  await reportBatch.commit();
 
   // ---- Everything else owned by this uid, deleted outright ----------------
   for (const [collection, field] of [
@@ -116,6 +126,13 @@ async function deleteAccountData(uid: string): Promise<DeleteAccountResult> {
   const rateLimitRef = firestore.collection(COLLECTIONS.reportRateLimits).doc(uid);
   if ((await rateLimitRef.get()).exists) {
     await rateLimitRef.delete();
+    documentsDeleted += 1;
+  }
+
+  // The Places allowance, keyed by uid like the counter above.
+  const placesQuotaRef = firestore.collection(COLLECTIONS.placesQuota).doc(uid);
+  if ((await placesQuotaRef.get()).exists) {
+    await placesQuotaRef.delete();
     documentsDeleted += 1;
   }
 
@@ -155,6 +172,15 @@ export const deleteAccount = onCall(
       throw new HttpsError('unauthenticated', 'You need to be signed in to delete your account.');
     }
 
+    // Irreversible, so a valid token is not enough: the sign-in itself must be
+    // recent. The app re-confirms the password just before calling.
+    if (!isRecentSignIn(request.auth?.token.auth_time, Date.now())) {
+      throw new HttpsError(
+        'failed-precondition',
+        'For your security, confirm your password and try again.',
+      );
+    }
+
     logger.info('Account deletion requested');
 
     let result: DeleteAccountResult;
@@ -164,7 +190,9 @@ export const deleteAccount = onCall(
       logger.error('Account deletion failed before the Auth record was removed', { error });
       throw new HttpsError(
         'internal',
-        'Your account could not be deleted. Nothing has been removed — please try again.',
+        // Not "nothing has been removed": earlier steps may have completed. Every
+        // step is idempotent, so retrying finishes the job.
+        'Your account could not be fully deleted. Please try again — it is safe to retry.',
       );
     }
 

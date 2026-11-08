@@ -60,7 +60,9 @@ export function useEmergencyContacts(userId: string | null): UseEmergencyContact
 export interface UseContactMutationsResult {
   add: (input: EmergencyContactInput, existingCount: number) => Promise<void>;
   update: (contactId: string, input: EmergencyContactInput) => Promise<void>;
+  /** Resolves even on failure — the failure is reported through `error`. */
   remove: (contactId: string) => Promise<void>;
+  /** Resolves even on failure — the failure is reported through `error`. */
   makePrimary: (contactId: string) => Promise<void>;
   saving: boolean;
   error: AppError | null;
@@ -127,15 +129,19 @@ export function useContactMutations(userId: string | null): UseContactMutationsR
       },
       [mutateAsync],
     ),
+    // `add` and `update` reject, because the form awaits them to decide whether
+    // to close. These two are fired from a tap with nothing awaiting them, so a
+    // rejection was an unhandled promise rejection on top of the error `error`
+    // already carries; they resolve and let `error` speak.
     remove: useCallback(
       async (contactId) => {
-        await mutateAsync({ kind: 'remove', contactId });
+        await mutateAsync({ kind: 'remove', contactId }).catch(() => undefined);
       },
       [mutateAsync],
     ),
     makePrimary: useCallback(
       async (contactId) => {
-        await mutateAsync({ kind: 'primary', contactId });
+        await mutateAsync({ kind: 'primary', contactId }).catch(() => undefined);
       },
       [mutateAsync],
     ),

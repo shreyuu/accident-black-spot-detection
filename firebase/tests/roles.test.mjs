@@ -13,6 +13,7 @@ import {
   createTestEnvironment,
   reportFixture,
   seed,
+  serverTimestamp,
 } from './helpers.mjs';
 
 /**
@@ -55,24 +56,36 @@ describe('role claims', () => {
     await assertFails(db.doc('adminAuditLogs/entry-1').get());
   });
 
+  /**
+   * The profile is otherwise valid — server timestamps, every required field —
+   * so the role is the *only* reason for refusal. This test used to send client
+   * `Date`s, which the timestamp check refused first: it passed without ever
+   * reaching `role == 'user'`. The control below proves the shape is accepted.
+   */
+  function profile(role) {
+    return {
+      id: 'user-1',
+      name: 'Climber',
+      email: 'climber@example.test',
+      role,
+      alertRadiusM: 1000,
+      alertsEnabled: true,
+      backgroundMonitoringEnabled: false,
+      hapticsEnabled: true,
+      soundEnabled: true,
+      darkModePreference: 'system',
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    };
+  }
+
+  it('accepts the same profile with the ordinary role (control)', async () => {
+    await assertSucceeds(asUser(env, 'user-1').doc('users/user-1').set(profile('user')));
+  });
+
   it('does not let a user escalate their own role in their profile', async () => {
-    const db = asUser(env, 'user-1');
-    await assertFails(
-      db.doc('users/user-1').set({
-        id: 'user-1',
-        name: 'Climber',
-        email: 'climber@example.test',
-        role: 'admin',
-        alertRadiusM: 1000,
-        alertsEnabled: true,
-        backgroundMonitoringEnabled: false,
-        hapticsEnabled: true,
-        soundEnabled: true,
-        darkModePreference: 'system',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      }),
-    );
+    await assertFails(asUser(env, 'user-1').doc('users/user-1').set(profile('admin')));
+    await assertFails(asUser(env, 'user-1').doc('users/user-1').set(profile('moderator')));
   });
 });
 

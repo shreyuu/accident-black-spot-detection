@@ -28,8 +28,20 @@
  * a mistake here is not recoverable.
  */
 
-/** How long an object must have been unreferenced before it may be removed. */
-export const ORPHAN_GRACE_PERIOD_HOURS = 24;
+/**
+ * How long an object must have been unreferenced before it may be removed.
+ *
+ * Fifteen days: the app's offline draft lifetime (`DRAFT_MAX_AGE_MS`, fourteen
+ * days) plus one. A draft that failed to submit keeps its photos' download URLs
+ * and does not re-upload them, so until it is retried those uploads are
+ * unreferenced *and still wanted*. This was 24 hours, and a draft retried on day
+ * two filed a report whose photographs the sweep had already deleted
+ * (SECURITY_AUDIT.md M4).
+ *
+ * A copy, not an import — the functions deploy cannot resolve the workspace
+ * package — and `orphanSweep.test.ts` asserts it outlasts the shared constant.
+ */
+export const ORPHAN_GRACE_PERIOD_HOURS = 15 * 24;
 
 export interface StorageObjectSummary {
   /** Full object path, e.g. `incidentReports/uid123/abc-def.jpg`. */
@@ -44,8 +56,8 @@ export interface OrphanSweepInput {
    * Download URLs referenced by report documents.
    *
    * These are `getDownloadURL()` strings, not object paths — they carry a query
-   * string and an access token — so the comparison is by *containment* of the
-   * URL-encoded object path rather than equality. See `isReferenced`.
+   * string and an access token — so each is parsed back to the one object path
+   * it names. See `referencedPathOf`.
    */
   referencedUrls: readonly string[];
   nowMs: number;
@@ -62,31 +74,72 @@ export interface OrphanSweepResult {
 }
 
 /**
+ * The one object path a stored URL names, or `null`.
+ *
+ * A Firebase download URL embeds the object path percent-encoded after `/o/`,
+ * so `incidentReports/uid/a.jpg` appears as `…/o/incidentReports%2Fuid%2Fa.jpg?…`.
+ * A URL without `/o/` is read as a plain path (`http://host/incidentReports/…`),
+ * which covers anything stored by a different route.
+ *
+ * Parsed, not searched. This used to test whether the encoded path appeared
+ * *anywhere* in the string, so one long `imageUrls` entry could name any number
+ * of objects — in its query string, or concatenated — and keep every one of them
+ * alive for ever (SECURITY_AUDIT.md L3). One URL now references one object.
+ */
+export function referencedPathOf(url: string): string | null {
+  let pathname: string;
+  try {
+    pathname = new URL(url).pathname;
+  } catch {
+    return null;
+  }
+
+  const marker = '/o/';
+  const index = pathname.indexOf(marker);
+  const encoded =
+    index === -1 ? pathname.replace(/^\//, '') : pathname.slice(index + marker.length);
+
+  try {
+    return decodeURIComponent(encoded);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Whether any report URL points at this object.
  *
- * A Firebase download URL embeds the object path percent-encoded, so
- * `incidentReports/uid/a.jpg` appears as `incidentReports%2Fuid%2Fa.jpg`. Both
- * forms are checked: the encoded one is what `getDownloadURL` produces, and the
- * plain one covers a URL that was stored differently — by the emulator, or by a
- * future change to how images are addressed.
- *
- * Erring towards "referenced" is deliberate. A false positive keeps a file that
- * costs a fraction of a penny; a false negative deletes evidence attached to a
- * report a moderator has not yet seen.
+ * Erring towards "referenced" is deliberate where it costs nothing: a URL whose
+ * path *ends* with the object's path (behind a bucket segment, say) counts. A
+ * false positive keeps a file that costs a fraction of a penny; a false negative
+ * deletes evidence attached to a report a moderator has not yet seen.
  */
-function isReferenced(path: string, referencedUrls: readonly string[]): boolean {
-  const encoded = encodeURIComponent(path);
-  return referencedUrls.some((url) => url.includes(encoded) || url.includes(path));
+function isReferenced(path: string, referencedPaths: ReadonlySet<string>): boolean {
+  if (referencedPaths.has(path)) {
+    return true;
+  }
+  for (const candidate of referencedPaths) {
+    if (candidate.endsWith(`/${path}`)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export function planOrphanSweep(input: OrphanSweepInput): OrphanSweepResult {
   const { objects, referencedUrls, nowMs, graceHours = ORPHAN_GRACE_PERIOD_HOURS } = input;
   const cutoffMs = nowMs - graceHours * 60 * 60 * 1000;
 
+  const referencedPaths = new Set(
+    referencedUrls
+      .map((url) => referencedPathOf(url))
+      .filter((path): path is string => path !== null),
+  );
+
   const result: OrphanSweepResult = { orphaned: [], tooRecent: [], referenced: [] };
 
   for (const object of objects) {
-    if (isReferenced(object.path, referencedUrls)) {
+    if (isReferenced(object.path, referencedPaths)) {
       result.referenced.push(object);
       continue;
     }

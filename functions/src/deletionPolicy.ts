@@ -45,6 +45,37 @@
 /** Replaces `reporterId` on an anonymised report. Not a valid uid, so it can never match a caller. */
 export const DELETED_REPORTER_MARKER = 'deleted-account';
 
+/**
+ * How recently the caller must have signed in for an account deletion.
+ *
+ * An ID token stays valid for an hour, and "holds a valid token" is a weak bar
+ * for something irreversible: an unlocked phone, or a token lifted from a log,
+ * was enough. The app re-confirms the password immediately before calling, so a
+ * genuine request is seconds old.
+ */
+export const RECENT_SIGN_IN_MAX_AGE_MS = 5 * 60 * 1000;
+
+/** Split `items` into consecutive groups of at most `size`, for batched writes. */
+export function inBatches<T>(items: readonly T[], size: number): T[][] {
+  const batches: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    batches.push(items.slice(index, index + size));
+  }
+  return batches;
+}
+
+/** Tolerated clock skew between the Auth backend and this function. */
+const AUTH_TIME_FUTURE_SKEW_MS = 60 * 1000;
+
+/** Whether a token's `auth_time` (epoch **seconds**) is recent enough to delete an account. */
+export function isRecentSignIn(authTimeSeconds: unknown, nowMs: number): boolean {
+  if (typeof authTimeSeconds !== 'number' || !Number.isFinite(authTimeSeconds)) {
+    return false;
+  }
+  const ageMs = nowMs - authTimeSeconds * 1000;
+  return ageMs <= RECENT_SIGN_IN_MAX_AGE_MS && ageMs >= -AUTH_TIME_FUTURE_SKEW_MS;
+}
+
 export type ReportDisposition = 'delete' | 'anonymise';
 
 export interface ReportSummary {

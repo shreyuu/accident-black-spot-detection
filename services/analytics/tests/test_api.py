@@ -124,6 +124,21 @@ class TestAuthentication:
 
         assert response.status_code == 503
 
+    def test_rejects_a_non_ascii_token_instead_of_crashing(self, client: TestClient) -> None:
+        # `secrets.compare_digest` raises on non-ASCII `str`, which surfaced as a
+        # 500 — an error page where a refusal belongs.
+        response = client.post(
+            "/analyse", json={}, headers={"Authorization": "Bearer t\u00f6ken".encode()}
+        )
+
+        assert response.status_code == 401
+
+    def test_accepts_the_scheme_in_any_case(self, client: TestClient) -> None:
+        # RFC 9110: the auth scheme is case-insensitive.
+        response = client.post("/analyse", json={}, headers={"Authorization": f"bearer {TOKEN}"})
+
+        assert response.status_code == 200
+
     def test_jobs_also_requires_a_token(self, client: TestClient) -> None:
         assert client.get("/jobs").status_code == 401
         assert client.get("/jobs", headers=auth()).status_code == 200

@@ -93,3 +93,28 @@ describe('normaliseProxyRequest', () => {
     }
   });
 });
+
+describe('normaliseProxyRequest refuses values it would otherwise coerce', () => {
+  // `Number(null)`, `Number('')` and `Number([])` are all 0, so a request with
+  // its coordinates missing used to become a search at (0, 0) — a billable call
+  // about the Gulf of Guinea.
+  for (const [label, value] of [
+    ['null', null],
+    ['an empty string', ''],
+    ['an empty array', []],
+    ['a numeric string', '51.5'],
+    ['a missing value', undefined],
+  ] as const) {
+    it(`rejects ${label} as a latitude`, () => {
+      assert.throws(() => normaliseProxyRequest({ ...valid, latitude: value }), {
+        code: 'invalid-argument',
+      });
+    });
+  }
+
+  it('rejects a radius that rounds to zero', () => {
+    assert.throws(() => normaliseProxyRequest({ ...valid, radiusM: 0.4 }), {
+      code: 'invalid-argument',
+    });
+  });
+});

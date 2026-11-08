@@ -26,7 +26,9 @@ import { initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 
-const VALID_ROLES = ['user', 'moderator', 'admin'];
+import { canReceiveRole, USER_ROLES } from '@accident-black-spot-detection/shared-types';
+
+const VALID_ROLES = USER_ROLES;
 const PROJECT_ID = process.env.FIREBASE_PROJECT_ID ?? 'demo-accident-black-spot-detection';
 
 const [email, role] = process.argv.slice(2);
@@ -77,25 +79,47 @@ if (user === null) {
   process.exit(1);
 }
 
+/**
+ * A privileged role only for a verified address — the same rule as the
+ * dashboard's `/roles` screen (`canReceiveRole`). Sign-up accepts any address
+ * unproven, so an unverified account may belong to whoever registered it first.
+ * Against the emulator, `npm run confirm-email` verifies a test account.
+ */
+if (!canReceiveRole(role, user.emailVerified)) {
+  console.error(
+    `${email} has not verified its email address, so it cannot be given "${role}". ` +
+      'Have the owner use the verification link (or, against the emulator, run ' +
+      '`npm run confirm-email -- <email>`) and try again.',
+  );
+  process.exit(1);
+}
+
 // The claim is what authorises. Everything else is bookkeeping.
 await auth.setCustomUserClaims(user.uid, { role });
 
 /**
- * Mirror the role onto the profile document.
+ * Mirror the role onto the profile document, if there is one.
  *
  * For display only — the mobile Settings screen and the dashboard header read it.
  * Authorisation never does, because a document can be written by more paths than
  * a custom claim can. If the two ever disagree, the claim wins and this copy is
  * simply stale.
+ *
+ * Only an existing profile is updated, as the dashboard does. A merge-`set`
+ * here used to create a stub `{ role, updatedAt }` for an account that had not
+ * opened the app yet — and the app's own profile creation then ran as an update
+ * touching `id`, `email` and `createdAt`, which the rules refuse for ever.
  */
-await firestore
-  .collection('users')
-  .doc(user.uid)
-  .set({ role, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+const profileRef = firestore.collection('users').doc(user.uid);
+if ((await profileRef.get()).exists) {
+  await profileRef.update({ role, updatedAt: FieldValue.serverTimestamp() });
+}
+
+// As the dashboard does: without this a demotion leaves every existing session
+// working until its token happens to expire.
+await auth.revokeRefreshTokens(user.uid);
 
 console.log(`✔ ${email} (${user.uid}) is now "${role}".`);
-console.log(
-  '  The claim reaches the client on its next token refresh — sign out and in again to pick it up.',
-);
+console.log('  Their existing sessions were revoked; they pick up the role at their next sign-in.');
 
 process.exit(0);
